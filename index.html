@@ -586,16 +586,24 @@ function handleSentFile(input) {
     reader.onload = e => {
       try {
         const wb = XLSX.read(e.target.result, {type:'binary'});
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const data = XLSX.utils.sheet_to_json(ws, {defval:''});
-        // 시트 선택: '우편목록' 시트가 있으면 우선 사용
-        const sheetName = wb.SheetNames.includes('우편목록')
-          ? '우편목록'
-          : wb.SheetNames[0];
-        const wsTarget = wb.Sheets[sheetName];
-        const dataTarget = XLSX.utils.sheet_to_json(wsTarget, {defval:''});
+
+        // 우선순위: '우편목록' 시트 → comp/사업장명 컬럼 있는 시트 → 첫 번째 시트
+        let sheetName = wb.SheetNames[0];
+        if (wb.SheetNames.includes('우편목록')) {
+          sheetName = '우편목록';
+        } else {
+          for (const sn of wb.SheetNames) {
+            const rows0 = XLSX.utils.sheet_to_json(wb.Sheets[sn], {defval:'', range:1});
+            if (rows0.length && ('comp' in rows0[0] || '사업장명' in rows0[0])) {
+              sheetName = sn; break;
+            }
+          }
+        }
+
+        const dataTarget = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {defval:''});
+        console.log('[' + file.name + '] 시트 '' + sheetName + '' — ' + dataTarget.length + '행');
+
         dataTarget.forEach(r => {
-          // 컬럼명 다양하게 대응: 우편목록 포맷 + 기존 발송 엑셀 포맷
           const n = normName(
             r['사업장명'] || r['comp'] || r['상호'] || r['업소명'] || ''
           );
