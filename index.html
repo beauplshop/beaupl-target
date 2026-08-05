@@ -700,14 +700,16 @@ async function runFetch() {
     log('▶ API 호출 시작...');
     setProgress(5, '총 건수 확인 중...');
 
-    // ── beauty_salons API (https://apis.data.go.kr/1741000/beauty_salons)
+    // ── beauty_salons API
+    // 영업상태코드: 1=영업/정상, 자치단체코드로 지역 필터 가능
     const baseUrl = 'https://apis.data.go.kr/1741000/beauty_salons/info';
 
-    // 1차: 총 건수 확인
+    // 1차: 영업중(trdStateGbn=1)으로 총 건수 확인
     const params = new URLSearchParams({
       serviceKey: apiKey,
       pageNo: '1',
       numOfRows: '1',
+      trdStateGbn: '1',   // 1 = 영업/정상만
       resultType: 'json',
     });
 
@@ -723,44 +725,72 @@ async function runFetch() {
       );
     }
 
-    // 응답 구조 파싱 (beauty_salons API 포맷)
     const resp  = data?.response || data;
     const body1 = resp?.body || data?.body || {};
     totalCount  = parseInt(body1?.totalCount || body1?.total_count || 0);
+
+    // trdStateGbn 서버필터 미지원 시 fallback (전체 수집 후 클라이언트 필터)
+    const serverFilter = totalCount > 0 && totalCount < 400000;
     if (!totalCount) {
       log('응답 원문: ' + JSON.stringify(data).slice(0, 400), 'warn');
       throw new Error('totalCount를 찾을 수 없습니다. API 키 또는 URL을 확인해주세요.');
     }
 
-    log(`총 ${totalCount.toLocaleString()}개 매장 확인`, 'ok');
+    if (serverFilter) {
+      log(`✅ 서버 필터 작동 — 영업중 ${totalCount.toLocaleString()}개만 수집`, 'ok');
+    } else {
+      log(`⚠️ 서버 필터 미지원 — 전체 ${totalCount.toLocaleString()}개 수집 후 클라이언트 필터`, 'warn');
+    }
+
     const totalPages = Math.ceil(totalCount / PAGE_SIZE);
     const maxPages   = Math.min(totalPages, 100);
-    log(`${totalPages}페이지 중 ${maxPages}페이지 수집 시작...`);
+    log(`${totalPages}페이지 중 최대 ${maxPages}페이지 수집 (목표 달성 시 조기 종료)`);
 
-    // 전체 페이지 순차 수집
+    // ── 조기 종료 + 영업중 필터 적용 수집 ──────────────────────
+    const EARLY_STOP_TARGET = topN * 8;  // 목표의 8배 후보 확보되면 종료
+    let earlyStop = false;
+
     for (page = 1; page <= maxPages; page++) {
       setProgress(
         5 + Math.round(page / maxPages * 60),
-        `데이터 수집 중... ${page}/${maxPages}페이지 (${allItems.length.toLocaleString()}건)`
+        `수집 중... ${page}/${maxPages}p | 영업중 ${allItems.length.toLocaleString()}건`
       );
+
       const p2 = new URLSearchParams({
         serviceKey: apiKey,
         pageNo: String(page),
         numOfRows: String(PAGE_SIZE),
+        trdStateGbn: '1',   // 영업/정상 필터
         resultType: 'json',
       });
       const r2  = await fetch(`${baseUrl}?${p2}`);
       const d2  = await r2.json();
 
-      // 응답 구조 유연하게 파싱
       const b2  = d2?.response?.body || d2?.body || d2;
       const raw = b2?.items?.item || b2?.items || b2?.item || [];
       const arr = Array.isArray(raw) ? raw : (raw && typeof raw === 'object' ? [raw] : []);
-      allItems.push(...arr);
 
-      if (page % 10 === 0) log(`  ${allItems.length.toLocaleString()}개 수집 완료`);
-      await new Promise(r => setTimeout(r, 80));
+      // 클라이언트 사이드 영업중 추가 필터 (서버필터 미작동 대비)
+      const filtered = arr.filter(item => {
+        const state = String(item.trdStateGbn || item.trdStateNm || '');
+        // 상태값이 없거나(신규API) '1' or '영업'이면 포함
+        return !state || state === '1' || state.includes('영업');
+      });
+      allItems.push(...filtered);
+
+      if (page % 5 === 0) log(`  ${page}p 완료 | 누적 영업중 ${allItems.length.toLocaleString()}건`);
+
+      // 조기 종료 체크: 기가입/발송 제외 후에도 충분한 후보가 있으면 종료
+      if (allItems.length >= EARLY_STOP_TARGET && page >= 10) {
+        log(`✅ 조기 종료 — ${allItems.length.toLocaleString()}건 확보 (목표 ${topN}의 8배)`, 'ok');
+        earlyStop = true;
+        break;
+      }
+
+      await new Promise(r => setTimeout(r, 60));
     }
+
+    if (!earlyStop) log(`전체 수집 완료 — ${allItems.length.toLocaleString()}건`, 'ok');
 
     log(`총 ${allItems.length.toLocaleString()}개 수집 완료`, 'ok');
     setProgress(70, '필터링 및 스코어링 중...');
@@ -779,9 +809,9 @@ async function runFetch() {
       const uptae = item.uptaeNm || item.indsNm || '';
       if (bizType === '일반미용업' && !uptae.includes('일반미용')) continue;
 
-      // 영업중 필터
-      const state = item.trdStateGbn || item.trdStatenm || '';
-      if (state && !state.includes('01') && !state.includes('영업')) continue;
+      // 영업중 필터 (수집 단계에서 1차 필터됨, 여기서 2차 확인)
+      const state = String(item.trdStateGbn || '');
+      if (state && state !== '1' && !state.includes('영업')) continue;
 
       const name = item.bplcNm || item.upsoNm || item.bizNm || '';
       const nn   = normName(name);
