@@ -646,13 +646,14 @@ async function runFetch() {
     log('▶ API 호출 시작...');
     setProgress(5, '총 건수 확인 중...');
 
-    const baseUrl = 'https://apis.data.go.kr/B553077/API01/searchUpso';
+    // ── beauty_salons API (https://apis.data.go.kr/1741000/beauty_salons)
+    const baseUrl = 'https://apis.data.go.kr/1741000/beauty_salons/info';
+
+    // 1차: 총 건수 확인
     const params = new URLSearchParams({
       serviceKey: apiKey,
-      pageIndex: '1',
-      pageSize: '1',
-      upsoTypeGb: '05_18_01',   // 일반미용업 코드
-      indscdNm: bizType === '일반미용업' ? '일반미용업' : '',
+      pageNo: '1',
+      numOfRows: '1',
       resultType: 'json',
     });
 
@@ -661,43 +662,74 @@ async function runFetch() {
       res  = await fetch(`${baseUrl}?${params}`);
       data = await res.json();
     } catch(e) {
-      // CORS 우회: 직접 호출이 막힌 경우 안내
-      throw new Error('CORS 오류: API를 직접 호출할 수 없습니다. 아래 안내를 확인하세요.');
+      throw new Error(
+        'CORS 오류: 브라우저에서 API 직접 호출이 차단됐습니다.\n' +
+        '해결: data.go.kr → 마이페이지 → API 관리 → 서비스 URL에\n' +
+        'https://beauplshop.github.io 추가 후 10분 기다리고 다시 시도해 보세요.'
+      );
     }
 
-    totalCount = data?.body?.totalCount || data?.response?.body?.totalCount || 0;
-    if (!totalCount) throw new Error('응답 오류: ' + JSON.stringify(data).slice(0, 200));
+    // 응답 구조 파싱 (beauty_salons API 포맷)
+    const resp  = data?.response || data;
+    const body1 = resp?.body || data?.body || {};
+    totalCount  = parseInt(body1?.totalCount || body1?.total_count || 0);
+    if (!totalCount) {
+      log('응답 원문: ' + JSON.stringify(data).slice(0, 400), 'warn');
+      throw new Error('totalCount를 찾을 수 없습니다. API 키 또는 URL을 확인해주세요.');
+    }
 
     log(`총 ${totalCount.toLocaleString()}개 매장 확인`, 'ok');
     const totalPages = Math.ceil(totalCount / PAGE_SIZE);
-    log(`${totalPages}페이지 순차 호출 예정 (페이지당 ${PAGE_SIZE}건)`);
+    const maxPages   = Math.min(totalPages, 100);
+    log(`${totalPages}페이지 중 ${maxPages}페이지 수집 시작...`);
 
-    // 전체 페이지 수집
-    for (page = 1; page <= Math.min(totalPages, 80); page++) {
-      setProgress(5 + Math.round(page / Math.min(totalPages, 80) * 60), `데이터 수집 중... ${page}/${Math.min(totalPages, 80)}페이지`);
+    // 전체 페이지 순차 수집
+    for (page = 1; page <= maxPages; page++) {
+      setProgress(
+        5 + Math.round(page / maxPages * 60),
+        `데이터 수집 중... ${page}/${maxPages}페이지 (${allItems.length.toLocaleString()}건)`
+      );
       const p2 = new URLSearchParams({
         serviceKey: apiKey,
-        pageIndex: String(page),
-        pageSize: String(PAGE_SIZE),
-        upsoTypeGb: '05_18_01',
+        pageNo: String(page),
+        numOfRows: String(PAGE_SIZE),
         resultType: 'json',
       });
-      const r2   = await fetch(`${baseUrl}?${p2}`);
-      const d2   = await r2.json();
-      const items = d2?.body?.items || d2?.response?.body?.items?.item || [];
-      const arr   = Array.isArray(items) ? items : [items];
+      const r2  = await fetch(`${baseUrl}?${p2}`);
+      const d2  = await r2.json();
+
+      // 응답 구조 유연하게 파싱
+      const b2  = d2?.response?.body || d2?.body || d2;
+      const raw = b2?.items?.item || b2?.items || b2?.item || [];
+      const arr = Array.isArray(raw) ? raw : (raw && typeof raw === 'object' ? [raw] : []);
       allItems.push(...arr);
-      if (page % 5 === 0) log(`  ${allItems.length.toLocaleString()}개 수집 완료`);
-      await new Promise(r => setTimeout(r, 100)); // 레이트리밋 방지
+
+      if (page % 10 === 0) log(`  ${allItems.length.toLocaleString()}개 수집 완료`);
+      await new Promise(r => setTimeout(r, 80));
     }
 
     log(`총 ${allItems.length.toLocaleString()}개 수집 완료`, 'ok');
     setProgress(70, '필터링 및 스코어링 중...');
 
-    // 필터링 + 제외 + 스코어링
+    // ── 필터링 + 제외 + 스코어링
+    // beauty_salons API 컬럼명 매핑
+    // upsoNm / bplcNm = 사업장명
+    // rdnWhlAddr / sitewhlAddr = 주소
+    // rdnPostNo / zipCode = 우편번호
+    // apvPermYmd = 인허가일자 (YYYYMMDD)
+    // trdStateGbn = 영업상태 (01=영업)
+    // uptaeNm = 업태명
     let scored = [];
     for (const item of allItems) {
-      const name = item.upsoNm || item.bizplcNm || '';
+      // 업태 필터: 일반미용업만
+      const uptae = item.uptaeNm || item.indsNm || '';
+      if (bizType === '일반미용업' && !uptae.includes('일반미용')) continue;
+
+      // 영업중 필터
+      const state = item.trdStateGbn || item.trdStatenm || '';
+      if (state && !state.includes('01') && !state.includes('영업')) continue;
+
+      const name = item.bplcNm || item.upsoNm || item.bizNm || '';
       const nn   = normName(name);
       if (!nn) continue;
       if (enrolledNames.has(nn)) continue;   // 기가입
