@@ -601,7 +601,7 @@ function handleSentFile(input) {
         }
 
         const dataTarget = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {defval:''});
-        console.log('[' + file.name + '] 시트 '' + sheetName + '' — ' + dataTarget.length + '행');
+        console.log(`[${file.name}] 시트 '${sheetName}' — ${dataTarget.length}행`);
 
         dataTarget.forEach(r => {
           const n = normName(
