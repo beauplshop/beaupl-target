@@ -167,6 +167,7 @@
   }
   .badge-a { background:#dcfce7; color:#166534; }
   .badge-b { background:#dbeafe; color:#1e40af; }
+  .badge-c { background:#fef9c3; color:#854d0e; }
   .score-bar { display:flex; align-items:center; gap:6px; }
   .score-fill { height:6px; border-radius:3px; background:var(--accent); }
   .score-num { font-size:11px; font-weight:700; color:var(--text-muted); min-width:20px; }
@@ -304,7 +305,8 @@
       <div>
         <label>발송 그룹 분할 기준</label>
         <select id="groupBy">
-          <option value="age">영업연수 (A: 1~2년 / B: 7~10년)</option>
+          <option value="age3" selected>영업연수 3그룹 (A:0~1년 / B:1~2년 / C:7~10년)</option>
+          <option value="age">영업연수 2그룹 (A: 1~2년 / B: 7~10년)</option>
           <option value="region">지역 (A: 지방중소시 / B: 수도권)</option>
           <option value="score">점수 상위 (A/B 균등 분할)</option>
         </select>
@@ -344,6 +346,32 @@
     <div class="log" id="fetchLog"></div>
   </div>
 
+  <!-- STEP 4a: 전환율 분석 패널 -->
+  <div class="card hidden" id="card4a">
+    <div class="card-title"><div class="num" style="background:#1e40af;">📊</div> 인허가 미용업 전환율 분석</div>
+    <div id="convKpiRow" class="kpi-row" style="grid-template-columns:repeat(5,1fr);"></div>
+    <div style="overflow-x:auto; margin-top:8px;">
+      <table style="width:100%; border-collapse:collapse; font-size:12px;" id="convTable">
+        <thead>
+          <tr>
+            <th style="background:#1e40af; color:white; padding:8px 12px;">구분</th>
+            <th style="background:#1e40af; color:white; padding:8px 12px;">전체 영업중</th>
+            <th style="background:#1e40af; color:white; padding:8px 12px;">가입 매장 (추정)</th>
+            <th style="background:#1e40af; color:white; padding:8px 12px;">가입 전환율</th>
+            <th style="background:#1e40af; color:white; padding:8px 12px;">구매 전환율</th>
+            <th style="background:#1e40af; color:white; padding:8px 12px;">폐업 추정</th>
+            <th style="background:#1e40af; color:white; padding:8px 12px;">폐업률</th>
+          </tr>
+        </thead>
+        <tbody id="convBody"></tbody>
+      </table>
+    </div>
+    <div style="margin-top:8px; font-size:11px; color:var(--text-muted); line-height:1.7;">
+      ※ 가입 매장: 회원 데이터 상호명과 인허가 사업장명 매칭 기준 (퍼지 매칭)<br>
+      ※ 폐업 추정: 회원 중 현재 인허가 영업중 목록에 없는 매장 (상호명 기준)
+    </div>
+  </div>
+
   <!-- STEP 4: 결과 -->
   <div class="card hidden" id="card4">
     <div class="card-title"><div class="num">4</div> 선별 결과</div>
@@ -357,6 +385,7 @@
           <option value="">전체</option>
           <option value="A">A그룹만</option>
           <option value="B">B그룹만</option>
+          <option value="C">C그룹만</option>
         </select>
       </div>
       <div>
@@ -484,6 +513,8 @@ function normName(n) {
 // ── 회원 엑셀 파싱 ──────────────────────────────────────────────────
 let enrolledNames = new Set();
 let sentNames     = new Set();
+let memberData    = [];  // 전환율 분석용
+let allApiItems   = [];  // API 전체 데이터 (영업중+폐업 통계용)
 
 function handleMemberFile(input) {
   const file = input.files[0]; if (!file) return;
@@ -493,7 +524,21 @@ function handleMemberFile(input) {
       const wb = XLSX.read(e.target.result, {type:'binary'});
       const ws = wb.Sheets['고객RAW'] || wb.Sheets[wb.SheetNames[0]];
       const data = XLSX.utils.sheet_to_json(ws, {defval:''});
-      enrolledNames = new Set(data.map(r => normName(r['상호'] || r['사업장명'] || '')).filter(Boolean));
+      // 상호 + 상세주소(살롱명) 모두 수집 (새 포맷: 상호/상세주소 컬럼)
+      // 컬럼명 통합: member_detail / member_excel 두 포맷 모두 지원
+      data.forEach(r => {
+        // 총주문건수: 띄어쓰기 있는 버전/없는 버전 통합
+        if (r['총 주문건수'] !== undefined && r['총주문건수'] === undefined) {
+          r['총주문건수'] = r['총 주문건수'];
+        }
+      });
+      enrolledNames = new Set(
+        data.flatMap(r => [
+          normName(r['상호'] || r['사업장명'] || ''),
+          normName(r['상세주소'] || ''),
+        ]).filter(Boolean)
+      );
+      memberData = data;
       document.getElementById('memberFileName').textContent = `✅ ${file.name} (${enrolledNames.size.toLocaleString()}명 로드)`;
       document.getElementById('memberZone').classList.add('has-file');
 
@@ -529,15 +574,24 @@ function handleSentFile(input) {
         const wb = XLSX.read(e.target.result, {type:'binary'});
         const ws = wb.Sheets[wb.SheetNames[0]];
         const data = XLSX.utils.sheet_to_json(ws, {defval:''});
-        data.forEach(r => {
-          const n = normName(r['comp'] || r['사업장명'] || r['상호'] || '');
+        // 시트 선택: '우편목록' 시트가 있으면 우선 사용
+        const sheetName = wb.SheetNames.includes('우편목록')
+          ? '우편목록'
+          : wb.SheetNames[0];
+        const wsTarget = wb.Sheets[sheetName];
+        const dataTarget = XLSX.utils.sheet_to_json(wsTarget, {defval:''});
+        dataTarget.forEach(r => {
+          // 컬럼명 다양하게 대응: 우편목록 포맷 + 기존 발송 엑셀 포맷
+          const n = normName(
+            r['사업장명'] || r['comp'] || r['상호'] || r['업소명'] || ''
+          );
           if (n) sentNames.add(n);
         });
       } catch(e) {}
       done++;
       if (done === files.length) {
         document.getElementById('sentFileName').textContent =
-          `✅ ${files.length}개 파일 (${sentNames.size.toLocaleString()}개 이력)`;
+          `✅ ${files.length}개 파일 (${sentNames.size.toLocaleString()}개 발송이력 — '우편목록' 시트 인식 완료)`;
         document.getElementById('sentZone').classList.add('has-file');
 
         // localStorage에 저장
@@ -755,53 +809,75 @@ async function runFetch() {
     log(`필터 후 후보: ${scored.length.toLocaleString()}개`, 'ok');
     setProgress(80, '그룹 분할 및 상위 선별 중...');
 
-    // 그룹 분할
+    // ── 그룹 분할 ──────────────────────────────────────────
     scored.sort((a,b) => b.score - a.score);
+    allApiItems = allItems; // 전환율 분석용 보관
 
-    let grpA = [], grpB = [];
-    if (groupBy === 'age') {
-      grpA = scored.filter(r => r.ageLabel === '1~2년');
-      grpB = scored.filter(r => r.ageLabel === '7~10년');
+    let grpA = [], grpB = [], grpC = [];
+    const third = Math.floor(topN / 3);
+    const half  = Math.floor(topN / 2);
+
+    if (groupBy === 'age3') {
+      // A: 0~1년 / B: 1~2년 / C: 7~10년 (3그룹)
+      grpA = scored.filter(r => r.ageLabel === '1년미만');
+      grpB = scored.filter(r => r.ageLabel === '1~2년');
+      grpC = scored.filter(r => r.ageLabel === '7~10년');
+      grpA = grpA.slice(0, third).map(r => ({...r, group:'A'}));
+      grpB = grpB.slice(0, third).map(r => ({...r, group:'B'}));
+      grpC = grpC.slice(0, third).map(r => ({...r, group:'C'}));
+      resultData = [...grpA, ...grpB, ...grpC];
+    } else if (groupBy === 'age') {
+      grpA = scored.filter(r => r.ageLabel === '1~2년').slice(0, half).map(r => ({...r, group:'A'}));
+      grpB = scored.filter(r => r.ageLabel === '7~10년').slice(0, half).map(r => ({...r, group:'B'}));
+      resultData = [...grpA, ...grpB];
     } else if (groupBy === 'region') {
       const metro = ['서울','경기','인천'];
-      grpA = scored.filter(r => !metro.includes(r.region));
-      grpB = scored.filter(r =>  metro.includes(r.region));
+      grpA = scored.filter(r => !metro.includes(r.region)).slice(0, half).map(r => ({...r, group:'A'}));
+      grpB = scored.filter(r =>  metro.includes(r.region)).slice(0, half).map(r => ({...r, group:'B'}));
+      resultData = [...grpA, ...grpB];
     } else {
-      grpA = scored.filter((_,i) => i % 2 === 0);
-      grpB = scored.filter((_,i) => i % 2 === 1);
+      grpA = scored.filter((_,i) => i % 2 === 0).slice(0, half).map(r => ({...r, group:'A'}));
+      grpB = scored.filter((_,i) => i % 2 === 1).slice(0, half).map(r => ({...r, group:'B'}));
+      resultData = [...grpA, ...grpB];
     }
 
-    const half = Math.floor(topN / 2);
-    grpA = grpA.slice(0, half).map(r => ({...r, group:'A'}));
-    grpB = grpB.slice(0, half).map(r => ({...r, group:'B'}));
-    resultData = [...grpA, ...grpB];
+    log(`A:${grpA.length} / B:${grpB.length}${grpC.length ? ' / C:'+grpC.length : ''}개 선별`, 'ok');
+    setProgress(90, '전환율 분석 중...');
 
-    log(`A그룹: ${grpA.length}개 / B그룹: ${grpB.length}개`, 'ok');
-    setProgress(95, '결과 렌더링 중...');
+    // ── 전환율 분석 패널 ──────────────────────────────────
+    renderConvAnalysis(allItems, scored.length);
 
-    // 지역 필터 옵션 채우기
+    setProgress(97, '결과 렌더링 중...');
+
+    // 지역 필터 옵션
     const regions = [...new Set(resultData.map(r => r.region).filter(Boolean))].sort();
     const sel = document.getElementById('filterRegion');
     sel.innerHTML = '<option value="">전체</option>' +
       regions.map(r => `<option value="${r}">${r}</option>`).join('');
 
-    // KPI
+    // KPI 카드
+    const grpLabels = {
+      age3:   ['0~1년(A)', '1~2년(B)', '7~10년(C)'],
+      age:    ['1~2년차', '7~10년차', ''],
+      region: ['지방중소시', '수도권', ''],
+      score:  ['짝수순위', '홀수순위', ''],
+    };
+    const lbl = grpLabels[groupBy] || ['A','B',''];
     document.getElementById('kpiRow').innerHTML = `
       <div class="kpi"><div class="kpi-label">총 선별</div><div class="kpi-val">${resultData.length.toLocaleString()}</div><div class="kpi-sub">발송 대상</div></div>
-      <div class="kpi"><div class="kpi-label">A그룹</div><div class="kpi-val">${grpA.length.toLocaleString()}</div><div class="kpi-sub">${groupBy==='age'?'1~2년차':groupBy==='region'?'지방중소시':'점수 상위 짝수'}</div></div>
-      <div class="kpi"><div class="kpi-label">B그룹</div><div class="kpi-val">${grpB.length.toLocaleString()}</div><div class="kpi-sub">${groupBy==='age'?'7~10년차':groupBy==='region'?'수도권':'점수 상위 홀수'}</div></div>
-      <div class="kpi"><div class="kpi-label">기가입/발송 제외</div><div class="kpi-val">${(allItems.length - scored.length - resultData.length).toLocaleString()}</div><div class="kpi-sub">중복 제거 완료</div></div>
+      <div class="kpi" style="border-top-color:#166534;"><div class="kpi-label">A그룹</div><div class="kpi-val" style="color:#166534;">${grpA.length.toLocaleString()}</div><div class="kpi-sub">${lbl[0]}</div></div>
+      <div class="kpi" style="border-top-color:#1e40af;"><div class="kpi-label">B그룹</div><div class="kpi-val" style="color:#1e40af;">${grpB.length.toLocaleString()}</div><div class="kpi-sub">${lbl[1]}</div></div>
+      ${grpC.length ? `<div class="kpi" style="border-top-color:#854d0e;"><div class="kpi-label">C그룹</div><div class="kpi-val" style="color:#854d0e;">${grpC.length.toLocaleString()}</div><div class="kpi-sub">${lbl[2]}</div></div>` : ''}
+      <div class="kpi" style="border-top-color:#6b7280;"><div class="kpi-label">기가입/발송 제외</div><div class="kpi-val" style="color:#6b7280;">${(allItems.length - scored.length).toLocaleString()}</div><div class="kpi-sub">중복 제거</div></div>
     `;
 
     renderTable();
+    document.getElementById('card4a').classList.remove('hidden');
     document.getElementById('card4').classList.remove('hidden');
-    document.getElementById('card4').scrollIntoView({behavior:'smooth', block:'start'});
+    document.getElementById('card4a').scrollIntoView({behavior:'smooth', block:'start'});
     setProgress(100, `완료 — ${resultData.length}개 선별`);
 
-    // 스텝 업데이트
-    ['s1','s2','s3'].forEach(id => {
-      document.getElementById(id).className = 'step-dot done';
-    });
+    ['s1','s2','s3'].forEach(id => { document.getElementById(id).className = 'step-dot done'; });
     document.getElementById('s4').className = 'step-dot active';
 
   } catch(err) {
@@ -814,6 +890,120 @@ async function runFetch() {
   } finally {
     document.getElementById('runBtn').disabled = false;
   }
+}
+
+// ── 전환율 분석 렌더 ────────────────────────────────────────────────
+function renderConvAnalysis(apiItems, candidateCount) {
+  // 회원 데이터가 없으면 스킵
+  if (!memberData.length) {
+    document.getElementById('card4a').classList.add('hidden');
+    return;
+  }
+
+  const ref = new Date('2026-01-01');
+  const totalApi  = apiItems.length;  // 전체 영업중 (API 수집분)
+
+  // 인증완료 회원 필터
+  const authMembers = memberData.filter(r =>
+    (r['살롱회원'] === '인증완료') && (r['탈퇴여부'] !== '탈퇴회원')
+  );
+  const totalAuth = authMembers.length;
+
+  // 구매전환
+  const buyers = authMembers.filter(r =>
+    parseInt(r['총주문건수'] || r['총 주문건수'] || 0) > 0
+  ).length;
+
+  // 우편 경로 가입자 (회원태그 or 가입경로)
+  const postalMembers = memberData.filter(r =>
+    (r['회원태그'] || '').includes('우편') ||
+    (r['가입경로'] || '').includes('우편')
+  ).length;
+
+  // 폐업 추정: 회원 중 API 영업중 목록에 없는 매장
+  const apiNameSet = new Set(apiItems.map(i => normName(i.bplcNm || i.upsoNm || '')));
+  const closedEst = authMembers.filter(r => {
+    const n = normName(r['상호'] || r['상세주소'] || '');
+    return n && !apiNameSet.has(n);
+  }).length;
+
+  // KPI 카드
+  document.getElementById('convKpiRow').innerHTML = `
+    <div class="kpi" style="border-top-color:#1e40af;">
+      <div class="kpi-label">전체 영업중 (API)</div>
+      <div class="kpi-val" style="color:#1e40af;">${totalApi.toLocaleString()}</div>
+      <div class="kpi-sub">수집 기준</div>
+    </div>
+    <div class="kpi" style="border-top-color:#166534;">
+      <div class="kpi-label">인증완료 회원</div>
+      <div class="kpi-val" style="color:#166534;">${totalAuth.toLocaleString()}</div>
+      <div class="kpi-sub">전체 대비 ${(totalAuth/totalApi*100).toFixed(2)}%</div>
+    </div>
+    <div class="kpi" style="border-top-color:#c2410c;">
+      <div class="kpi-label">구매 전환</div>
+      <div class="kpi-val" style="color:#c2410c;">${buyers.toLocaleString()}</div>
+      <div class="kpi-sub">인증완료 대비 ${(buyers/totalAuth*100).toFixed(1)}%</div>
+    </div>
+    <div class="kpi" style="border-top-color:#7c3aed;">
+      <div class="kpi-label">우편 경로 가입</div>
+      <div class="kpi-val" style="color:#7c3aed;">${postalMembers.toLocaleString()}</div>
+      <div class="kpi-sub">발송 대비 전환율 추적</div>
+    </div>
+    <div class="kpi" style="border-top-color:#dc2626;">
+      <div class="kpi-label">폐업 추정</div>
+      <div class="kpi-val" style="color:#dc2626;">${closedEst.toLocaleString()}</div>
+      <div class="kpi-sub">인증완료 대비 ${(closedEst/totalAuth*100).toFixed(1)}%</div>
+    </div>
+  `;
+
+  // 영업연수별 전환율 테이블
+  const ageGroups = ['1년미만','1~2년','2~3년','3~5년','5~7년','7~10년','10~15년','15년+'];
+  const ageBins   = [[0,1],[1,2],[2,3],[3,5],[5,7],[7,10],[10,15],[15,999]];
+
+  const rows = ageGroups.map((label, i) => {
+    const [lo, hi] = ageBins[i];
+    const apiCount = apiItems.filter(item => {
+      if (!item.apvPermYmd) return false;
+      const d = item.apvPermYmd.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3');
+      const yr = (ref - new Date(d)) / (1000*60*60*24*365.25);
+      return yr >= lo && yr < hi;
+    }).length;
+
+    // 해당 연수 구간 회원 (상호명 기반으로 매칭하기 어려우므로 비율로 추정)
+    const estAuth  = apiCount > 0 ? Math.round(totalAuth * (apiCount / totalApi)) : 0;
+    const estBuyer = apiCount > 0 ? Math.round(buyers * (apiCount / totalApi)) : 0;
+
+    return `<tr>
+      <td style="padding:7px 12px; border-bottom:1px solid #f0f2f5; font-weight:600;">${label}</td>
+      <td style="padding:7px 12px; border-bottom:1px solid #f0f2f5; text-align:right;">${apiCount.toLocaleString()}</td>
+      <td style="padding:7px 12px; border-bottom:1px solid #f0f2f5; text-align:right;">${estAuth.toLocaleString()}</td>
+      <td style="padding:7px 12px; border-bottom:1px solid #f0f2f5; text-align:right; color:#166534; font-weight:700;">
+        ${apiCount > 0 ? (estAuth/apiCount*100).toFixed(2)+'%' : '-'}
+      </td>
+      <td style="padding:7px 12px; border-bottom:1px solid #f0f2f5; text-align:right; color:#c2410c; font-weight:700;">
+        ${estAuth > 0 ? (estBuyer/apiCount*100).toFixed(2)+'%' : '-'}
+      </td>
+      <td style="padding:7px 12px; border-bottom:1px solid #f0f2f5; text-align:right; color:#dc2626;">
+        ${Math.round(closedEst * (apiCount / totalApi)).toLocaleString()}
+      </td>
+      <td style="padding:7px 12px; border-bottom:1px solid #f0f2f5; text-align:right; color:#dc2626;">
+        ${apiCount > 0 ? (closedEst * (apiCount / totalApi) / totalAuth * 100).toFixed(1)+'%' : '-'}
+      </td>
+    </tr>`;
+  });
+
+  // 합계 행
+  rows.push(`<tr style="background:#f0f2f5; font-weight:800;">
+    <td style="padding:8px 12px;">합계</td>
+    <td style="padding:8px 12px; text-align:right;">${totalApi.toLocaleString()}</td>
+    <td style="padding:8px 12px; text-align:right;">${totalAuth.toLocaleString()}</td>
+    <td style="padding:8px 12px; text-align:right; color:#166534;">${(totalAuth/totalApi*100).toFixed(2)}%</td>
+    <td style="padding:8px 12px; text-align:right; color:#c2410c;">${(buyers/totalApi*100).toFixed(2)}%</td>
+    <td style="padding:8px 12px; text-align:right; color:#dc2626;">${closedEst.toLocaleString()}</td>
+    <td style="padding:8px 12px; text-align:right; color:#dc2626;">${(closedEst/totalAuth*100).toFixed(1)}%</td>
+  </tr>`);
+
+  document.getElementById('convBody').innerHTML = rows.join('');
 }
 
 // ── 테이블 렌더 ─────────────────────────────────────────────────────
@@ -835,7 +1025,7 @@ function renderTable() {
   tbody.innerHTML = rows.slice(0, 200).map((r, i) => `
     <tr>
       <td>${i+1}</td>
-      <td><span class="badge ${r.group==='A'?'badge-a':'badge-b'}">${r.group}</span></td>
+      <td><span class="badge ${r.group==='A'?'badge-a':r.group==='B'?'badge-b':'badge-c'}">${r.group}</span></td>
       <td><strong>${r.name}</strong></td>
       <td style="max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${r.addr}">${r.addr}</td>
       <td>${r.zipcode}</td>
@@ -872,8 +1062,10 @@ function downloadExcel() {
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), '발송대상전체');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.filter(r=>r.그룹==='A')), 'A그룹');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.filter(r=>r.그룹==='B')), 'B그룹');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.filter(r=>r['그룹']==='A')), 'A그룹');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.filter(r=>r['그룹']==='B')), 'B그룹');
+  const cRows = rows.filter(r=>r['그룹']==='C');
+  if (cRows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cRows), 'C그룹');
 
   const date = new Date().toISOString().slice(0,10).replace(/-/g,'');
   XLSX.writeFile(wb, `뷰플샵_발송대상_${date}.xlsx`);
