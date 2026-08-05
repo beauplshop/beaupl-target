@@ -306,10 +306,24 @@
         <label>발송 그룹 분할 기준</label>
         <select id="groupBy">
           <option value="age3" selected>영업연수 3그룹 (A:0~1년 / B:1~2년 / C:7~10년)</option>
-          <option value="age">영업연수 2그룹 (A: 1~2년 / B: 7~10년)</option>
           <option value="region">지역 (A: 지방중소시 / B: 수도권)</option>
           <option value="score">점수 상위 (A/B 균등 분할)</option>
         </select>
+      </div>
+    </div>
+    <div class="input-row" style="margin-bottom:16px;">
+      <div>
+        <label>API 호출 순서 <span class="tip" title="전환율 높은 지역순: 대전→광주→울산... 순으로 호출 후 조기 종료&#10;최신 인허가순: 전국을 최신 인허가 기준으로 수집">?</span></label>
+        <select id="fetchOrder">
+          <option value="region_first" selected>전환율 높은 지역순 (권장 — 대전→광주→울산…)</option>
+          <option value="latest_first">최신 인허가순 (전국 최신 오픈 우선)</option>
+        </select>
+      </div>
+      <div>
+        <label style="color:var(--text-muted); font-size:11px; margin-top:6px; display:block;">
+          💡 전환율 지역순: 조기 종료가 빠르고 고효율 지역 우선 수집<br>
+          💡 최신 인허가순: 신규 오픈 매장 중심, 전국 균등 수집
+        </label>
       </div>
     </div>
     <div class="input-row" style="margin-bottom:16px;">
@@ -670,11 +684,12 @@ function scoreRow(item, refDate) {
 let resultData = [];
 
 async function runFetch() {
-  const apiKey   = document.getElementById('apiKey').value.trim();
-  const topN     = parseInt(document.getElementById('topN').value);
-  const minScore = parseInt(document.getElementById('minScore').value);
-  const bizType  = document.getElementById('bizType').value;
-  const groupBy  = document.getElementById('groupBy').value;
+  const apiKey     = document.getElementById('apiKey').value.trim();
+  const topN       = parseInt(document.getElementById('topN').value);
+  const minScore   = parseInt(document.getElementById('minScore').value);
+  const bizType    = document.getElementById('bizType').value;
+  const groupBy    = document.getElementById('groupBy').value;
+  const fetchOrder = document.getElementById('fetchOrder').value;
 
   if (!apiKey) { alert('API 키를 입력해주세요.'); return; }
 
@@ -701,21 +716,46 @@ async function runFetch() {
     setProgress(5, '총 건수 확인 중...');
 
     // ── beauty_salons API
-    // 영업상태코드: 1=영업/정상, 자치단체코드로 지역 필터 가능
+    // 우선순위: 최신 인허가순 > 전환율 높은 지역코드 순 호출 → 목표 달성 시 조기 종료
     const baseUrl = 'https://apis.data.go.kr/1741000/beauty_salons/info';
 
-    // 1차: 영업중(trdStateGbn=1)으로 총 건수 확인
-    const params = new URLSearchParams({
-      serviceKey: apiKey,
-      pageNo: '1',
-      numOfRows: '1',
-      trdStateGbn: '1',   // 1 = 영업/정상만
-      resultType: 'json',
-    });
+    // 지역코드 — 뷰플샵 구매전환율 기준 내림차순 (개방자치단체코드.xlsx 참조)
+    // 대전 > 광주 > 울산 > 경기 > 대구 > 인천 > 서울 > 부산 > 강원 > 경남 > 경북 > 전북 > 전남 > 충남 > 충북 > 제주 > 세종
+    const REGION_PRIORITY = [
+      {name:'대전', code:'6300000_ALL'},
+      {name:'광주', code:'6290000_ALL'},
+      {name:'울산', code:'6310000_ALL'},
+      {name:'경기', code:'6410000_ALL'},
+      {name:'대구', code:'6270000_ALL'},
+      {name:'인천', code:'6280000_ALL'},
+      {name:'서울', code:'6110000_ALL'},
+      {name:'부산', code:'6260000_ALL'},
+      {name:'강원', code:'6530000_ALL'},
+      {name:'경남', code:'6480000_ALL'},
+      {name:'경북', code:'6470000_ALL'},
+      {name:'전북', code:'6540000_ALL'},
+      {name:'전남', code:'6460000_ALL'},
+      {name:'충남', code:'6440000_ALL'},
+      {name:'충북', code:'6430000_ALL'},
+      {name:'제주', code:'6500000_ALL'},
+      {name:'세종', code:'5690000_ALL'},
+    ];
 
+    const EARLY_STOP_TARGET = topN * 8;  // 목표의 8배 후보 확보되면 조기 종료
+    let totalFetched = 0;
+    let earlyStop = false;
+
+    // CORS 연결 테스트 (첫 호출)
     let res, data;
     try {
-      res  = await fetch(`${baseUrl}?${params}`);
+      const testParams = new URLSearchParams({
+        serviceKey: apiKey,
+        pageNo: '1', numOfRows: '1',
+        opnSfTeamCode: REGION_PRIORITY[0].code,
+        trdStateGbn: '1',
+        resultType: 'json',
+      });
+      res  = await fetch(`${baseUrl}?${testParams}`);
       data = await res.json();
     } catch(e) {
       throw new Error(
@@ -725,72 +765,123 @@ async function runFetch() {
       );
     }
 
-    const resp  = data?.response || data;
-    const body1 = resp?.body || data?.body || {};
-    totalCount  = parseInt(body1?.totalCount || body1?.total_count || 0);
-
-    // trdStateGbn 서버필터 미지원 시 fallback (전체 수집 후 클라이언트 필터)
-    const serverFilter = totalCount > 0 && totalCount < 400000;
-    if (!totalCount) {
-      log('응답 원문: ' + JSON.stringify(data).slice(0, 400), 'warn');
-      throw new Error('totalCount를 찾을 수 없습니다. API 키 또는 URL을 확인해주세요.');
+    // API 응답 파싱 헬퍼
+    function parseItems(d) {
+      const b = d?.response?.body || d?.body || d;
+      const raw = b?.items?.item || b?.items || b?.item || [];
+      return Array.isArray(raw) ? raw : (raw && typeof raw === 'object' ? [raw] : []);
+    }
+    function parseTotal(d) {
+      const b = d?.response?.body || d?.body || {};
+      return parseInt(b?.totalCount || b?.total_count || 0);
     }
 
-    if (serverFilter) {
-      log(`✅ 서버 필터 작동 — 영업중 ${totalCount.toLocaleString()}개만 수집`, 'ok');
-    } else {
-      log(`⚠️ 서버 필터 미지원 — 전체 ${totalCount.toLocaleString()}개 수집 후 클라이언트 필터`, 'warn');
+    // 클라이언트 필터 공통 함수
+    function clientFilter(arr) {
+      return arr.filter(item => {
+        const state = String(item.trdStateGbn || '');
+        if (state && state !== '1' && !state.includes('영업')) return false;
+        if (bizType === '일반미용업') {
+          const uptae = item.uptaeNm || item.indsNm || '';
+          if (!uptae.includes('일반미용')) return false;
+        }
+        return true;
+      });
     }
 
-    const totalPages = Math.ceil(totalCount / PAGE_SIZE);
-    const maxPages   = Math.min(totalPages, 100);
-    log(`${totalPages}페이지 중 최대 ${maxPages}페이지 수집 (목표 달성 시 조기 종료)`);
+    if (fetchOrder === 'region_first') {
+      // ── 모드 A: 전환율 높은 지역순 호출 ──────────────────────────
+      log('📍 호출 모드: 전환율 높은 지역순 (대전→광주→울산→경기→...)');
+      for (let ri = 0; ri < REGION_PRIORITY.length; ri++) {
+        if (earlyStop) break;
+        const region = REGION_PRIORITY[ri];
 
-    // ── 조기 종료 + 영업중 필터 적용 수집 ──────────────────────
-    const EARLY_STOP_TARGET = topN * 8;  // 목표의 8배 후보 확보되면 종료
-    let earlyStop = false;
+        const countParams = new URLSearchParams({
+          serviceKey: apiKey,
+          pageNo: '1', numOfRows: '1',
+          opnSfTeamCode: region.code,
+          trdStateGbn: '1',
+          resultType: 'json',
+        });
+        const cRes  = await fetch(`${baseUrl}?${countParams}`);
+        const cData = await cRes.json();
+        const regionTotal = parseTotal(cData);
+        if (!regionTotal) { log(`  ${region.name}: 데이터 없음`, 'warn'); continue; }
 
-    for (page = 1; page <= maxPages; page++) {
-      setProgress(
-        5 + Math.round(page / maxPages * 60),
-        `수집 중... ${page}/${maxPages}p | 영업중 ${allItems.length.toLocaleString()}건`
-      );
+        const regionPages = Math.ceil(regionTotal / PAGE_SIZE);
+        log(`▶ ${region.name} — 영업중 ${regionTotal.toLocaleString()}개 / ${regionPages}p`, 'ok');
 
-      const p2 = new URLSearchParams({
-        serviceKey: apiKey,
-        pageNo: String(page),
-        numOfRows: String(PAGE_SIZE),
-        trdStateGbn: '1',   // 영업/정상 필터
-        resultType: 'json',
-      });
-      const r2  = await fetch(`${baseUrl}?${p2}`);
-      const d2  = await r2.json();
+        for (page = 1; page <= regionPages; page++) {
+          const pct = Math.round(((ri / REGION_PRIORITY.length) + (page / regionPages / REGION_PRIORITY.length)) * 60);
+          setProgress(5 + pct, `[지역순] ${region.name} ${page}/${regionPages}p | 누적 ${allItems.length.toLocaleString()}건`);
 
-      const b2  = d2?.response?.body || d2?.body || d2;
-      const raw = b2?.items?.item || b2?.items || b2?.item || [];
-      const arr = Array.isArray(raw) ? raw : (raw && typeof raw === 'object' ? [raw] : []);
+          const p2 = new URLSearchParams({
+            serviceKey: apiKey,
+            pageNo: String(page), numOfRows: String(PAGE_SIZE),
+            opnSfTeamCode: region.code,
+            trdStateGbn: '1', resultType: 'json',
+          });
+          const r2 = await fetch(`${baseUrl}?${p2}`);
+          const d2 = await r2.json();
+          let arr = clientFilter(parseItems(d2));
+          // 지역 내 최신 인허가순 정렬
+          arr.sort((a, b) => (b.apvPermYmd || '').localeCompare(a.apvPermYmd || ''));
+          allItems.push(...arr);
 
-      // 클라이언트 사이드 영업중 추가 필터 (서버필터 미작동 대비)
-      const filtered = arr.filter(item => {
-        const state = String(item.trdStateGbn || item.trdStateNm || '');
-        // 상태값이 없거나(신규API) '1' or '영업'이면 포함
-        return !state || state === '1' || state.includes('영업');
-      });
-      allItems.push(...filtered);
-
-      if (page % 5 === 0) log(`  ${page}p 완료 | 누적 영업중 ${allItems.length.toLocaleString()}건`);
-
-      // 조기 종료 체크: 기가입/발송 제외 후에도 충분한 후보가 있으면 종료
-      if (allItems.length >= EARLY_STOP_TARGET && page >= 10) {
-        log(`✅ 조기 종료 — ${allItems.length.toLocaleString()}건 확보 (목표 ${topN}의 8배)`, 'ok');
-        earlyStop = true;
-        break;
+          if (allItems.length >= EARLY_STOP_TARGET) {
+            log(`✅ 조기 종료 — ${allItems.length.toLocaleString()}건 (${region.name} ${page}p)`, 'ok');
+            earlyStop = true; break;
+          }
+          await new Promise(r => setTimeout(r, 60));
+        }
+        log(`  ${region.name} 완료 — 누적 ${allItems.length.toLocaleString()}건`);
       }
 
-      await new Promise(r => setTimeout(r, 60));
+    } else {
+      // ── 모드 B: 최신 인허가순 (전국 균등) ──────────────────────────
+      log('📅 호출 모드: 최신 인허가순 (전국 전체, 최신 오픈 우선)');
+      // 1차: 전체 건수 확인
+      const cntParams = new URLSearchParams({
+        serviceKey: apiKey, pageNo: '1', numOfRows: '1',
+        trdStateGbn: '1', resultType: 'json',
+      });
+      const cntRes  = await fetch(`${baseUrl}?${cntParams}`);
+      const cntData = await cntRes.json();
+      const globalTotal = parseTotal(cntData);
+      if (!globalTotal) throw new Error('전체 건수를 가져올 수 없습니다. API 키를 확인하세요.');
+      log(`전국 영업중 총 ${globalTotal.toLocaleString()}개 — 최신순 수집 시작`, 'ok');
+
+      const globalPages = Math.ceil(globalTotal / PAGE_SIZE);
+      const maxPages    = Math.min(globalPages, 100);
+
+      for (page = 1; page <= maxPages; page++) {
+        setProgress(5 + Math.round(page / maxPages * 60),
+          `[최신순] 전국 ${page}/${maxPages}p | 누적 ${allItems.length.toLocaleString()}건`);
+
+        const p2 = new URLSearchParams({
+          serviceKey: apiKey,
+          pageNo: String(page), numOfRows: String(PAGE_SIZE),
+          trdStateGbn: '1', resultType: 'json',
+        });
+        const r2 = await fetch(`${baseUrl}?${p2}`);
+        const d2 = await r2.json();
+        let arr = clientFilter(parseItems(d2));
+        // 페이지 내 최신 인허가순 정렬
+        arr.sort((a, b) => (b.apvPermYmd || '').localeCompare(a.apvPermYmd || ''));
+        allItems.push(...arr);
+
+        if (page % 10 === 0) log(`  ${page}p 완료 | 누적 ${allItems.length.toLocaleString()}건`);
+
+        if (allItems.length >= EARLY_STOP_TARGET) {
+          log(`✅ 조기 종료 — ${allItems.length.toLocaleString()}건 (${page}p)`, 'ok');
+          earlyStop = true; break;
+        }
+        await new Promise(r => setTimeout(r, 60));
+      }
+      if (!earlyStop) log(`전국 수집 완료 — 총 ${allItems.length.toLocaleString()}건`, 'ok');
     }
 
-    if (!earlyStop) log(`전체 수집 완료 — ${allItems.length.toLocaleString()}건`, 'ok');
+    totalCount = allItems.length;
 
     log(`총 ${allItems.length.toLocaleString()}개 수집 완료`, 'ok');
     setProgress(70, '필터링 및 스코어링 중...');
@@ -805,13 +896,7 @@ async function runFetch() {
     // uptaeNm = 업태명
     let scored = [];
     for (const item of allItems) {
-      // 업태 필터: 일반미용업만
-      const uptae = item.uptaeNm || item.indsNm || '';
-      if (bizType === '일반미용업' && !uptae.includes('일반미용')) continue;
-
-      // 영업중 필터 (수집 단계에서 1차 필터됨, 여기서 2차 확인)
-      const state = String(item.trdStateGbn || '');
-      if (state && state !== '1' && !state.includes('영업')) continue;
+      // 업태·영업상태 필터는 수집 단계에서 이미 처리됨
 
       const name = item.bplcNm || item.upsoNm || item.bizNm || '';
       const nn   = normName(name);
@@ -856,10 +941,6 @@ async function runFetch() {
       grpB = grpB.slice(0, third).map(r => ({...r, group:'B'}));
       grpC = grpC.slice(0, third).map(r => ({...r, group:'C'}));
       resultData = [...grpA, ...grpB, ...grpC];
-    } else if (groupBy === 'age') {
-      grpA = scored.filter(r => r.ageLabel === '1~2년').slice(0, half).map(r => ({...r, group:'A'}));
-      grpB = scored.filter(r => r.ageLabel === '7~10년').slice(0, half).map(r => ({...r, group:'B'}));
-      resultData = [...grpA, ...grpB];
     } else if (groupBy === 'region') {
       const metro = ['서울','경기','인천'];
       grpA = scored.filter(r => !metro.includes(r.region)).slice(0, half).map(r => ({...r, group:'A'}));
