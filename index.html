@@ -263,14 +263,37 @@
     </div>
   </div>
 
-  <!-- STEP 2: 기존 회원 + 발송 이력 업로드 -->
+  <!-- STEP 2: 데이터 업로드 -->
   <div class="card" id="card2">
-    <div class="card-title"><div class="num">2</div> 기존 데이터 업로드 (제외 처리용)</div>
+    <div class="card-title"><div class="num">2</div> 데이터 업로드</div>
+
+    <!-- 인허가 파일 (필수) -->
+    <div style="margin-bottom:14px;">
+      <div style="font-size:11px; font-weight:700; color:var(--accent); text-transform:uppercase; letter-spacing:.4px; margin-bottom:8px;">
+        📋 인허가 데이터 <span style="color:var(--accent); font-size:10px;">(필수 — API 대체)</span>
+      </div>
+      <div class="upload-zone" id="salonZone" onclick="document.getElementById('salonFile').click()">
+        <div class="icon">🏛</div>
+        <div class="text">미용업 인허가 엑셀<br>
+          <small>localdata.go.kr에서 매월 1일 다운로드<br>
+          05_18_01_P-영업_일반미용업_YYYYMM.xlsx</small>
+        </div>
+        <div class="file-name" id="salonFileName"></div>
+      </div>
+      <input type="file" id="salonFile" accept=".xlsx,.xls,.csv" onchange="handleSalonFile(this)">
+    </div>
+
+    <hr style="border:none; border-top:1px solid var(--border); margin:16px 0;">
+
+    <!-- 회원 + 발송이력 (제외 처리용) -->
+    <div style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.4px; margin-bottom:8px;">
+      🚫 제외 처리용 (기가입·발송이력)
+    </div>
     <div class="input-row">
       <div>
         <div class="upload-zone" id="memberZone" onclick="document.getElementById('memberFile').click()">
           <div class="icon">📊</div>
-          <div class="text">뷰플샵 회원 엑셀 (고객RAW 시트)<br><small>손익분석_뷰플샵.xlsx</small></div>
+          <div class="text">뷰플샵 회원 엑셀<br><small>member_excel_YYYY-MM-DD.xlsx</small></div>
           <div class="file-name" id="memberFileName"></div>
         </div>
         <input type="file" id="memberFile" accept=".xlsx,.xls" onchange="handleMemberFile(this)">
@@ -278,7 +301,7 @@
       <div>
         <div class="upload-zone" id="sentZone" onclick="document.getElementById('sentFile').click()">
           <div class="icon">📬</div>
-          <div class="text">과거 발송 이력 엑셀<br><small>발송_뷰플샵YYYYMMDD_*.xlsx (복수 가능)</small></div>
+          <div class="text">과거 발송 이력 엑셀<br><small>우편고객관리_YYYYMMDD.xlsx</small></div>
           <div class="file-name" id="sentFileName"></div>
         </div>
         <input type="file" id="sentFile" accept=".xlsx,.xls" multiple onchange="handleSentFile(this)">
@@ -313,16 +336,16 @@
     </div>
     <div class="input-row" style="margin-bottom:16px;">
       <div>
-        <label>API 호출 순서 <span class="tip" title="전환율 높은 지역순: 대전→광주→울산... 순으로 호출 후 조기 종료&#10;최신 인허가순: 전국을 최신 인허가 기준으로 수집">?</span></label>
+        <label>우선순위 정렬 기준 <span class="tip" title="전환율 높은 지역순: 대전→광주→울산 등 구매전환율 높은 지역 우선&#10;최신 인허가순: 신규 오픈 매장 우선 (0~2년차)">?</span></label>
         <select id="fetchOrder">
           <option value="region_first" selected>전환율 높은 지역순 (권장 — 대전→광주→울산…)</option>
-          <option value="latest_first">최신 인허가순 (전국 최신 오픈 우선)</option>
+          <option value="latest_first">최신 인허가순 (신규 오픈 우선)</option>
         </select>
       </div>
       <div>
         <label style="color:var(--text-muted); font-size:11px; margin-top:6px; display:block;">
-          💡 전환율 지역순: 조기 종료가 빠르고 고효율 지역 우선 수집<br>
-          💡 최신 인허가순: 신규 오픈 매장 중심, 전국 균등 수집
+          💡 인허가 파일을 업로드하면 API 없이 즉시 처리됩니다<br>
+          💡 매월 1일 localdata.go.kr에서 신규 파일 다운로드 권장
         </label>
       </div>
     </div>
@@ -347,10 +370,10 @@
     </div>
     <div class="btn-row">
       <button class="btn btn-primary" onclick="runFetch()" id="runBtn">
-        ▶ 인허가 데이터 조회 및 선별 시작
+        ▶ 필터링 및 선별 시작
       </button>
       <span id="runHint" style="font-size:11px; color:var(--text-muted);">
-        API 호출 → 필터링 → 스코어링 → 상위 선별
+        인허가 파일 → 필터링 → 스코어링 → 상위 선별
       </span>
     </div>
     <div class="progress-wrap hidden" id="progressWrap">
@@ -470,6 +493,24 @@ window.addEventListener('load', () => {
 function loadCachedData() {
   let msgs = [];
 
+  // 인허가 캐시 복원
+  const cachedSalon = localStorage.getItem('beaupl_salon');
+  if (cachedSalon) {
+    try {
+      const parsed = JSON.parse(cachedSalon);
+      // 경량 캐시에서 salonData 복원
+      salonData = parsed.rows.map(r => ({
+        '사업장명': r.n, '도로명전체주소': r.a,
+        '도로명우편번호': r.z, '인허가일자': r.d,
+        '의자수': r.c, '업태구분명': r.t,
+      }));
+      document.getElementById('salonFileName').textContent =
+        `✅ ${parsed.filename} (${parsed.count.toLocaleString()}개) — 저장됨`;
+      document.getElementById('salonZone').classList.add('has-file');
+      msgs.push(`인허가 ${parsed.count.toLocaleString()}개`);
+    } catch(e) { localStorage.removeItem('beaupl_salon'); }
+  }
+
   const cachedMembers = localStorage.getItem('beaupl_members');
   if (cachedMembers) {
     try {
@@ -505,14 +546,18 @@ function loadCachedData() {
 
 function clearCache() {
   if (!confirm('저장된 회원·발송이력 데이터를 삭제할까요?')) return;
+  localStorage.removeItem('beaupl_salon');
   localStorage.removeItem('beaupl_members');
   localStorage.removeItem('beaupl_sent');
   enrolledNames = new Set();
   sentNames     = new Set();
+  document.getElementById('salonFileName').textContent = '';
   document.getElementById('memberFileName').textContent = '';
   document.getElementById('sentFileName').textContent = '';
+  document.getElementById('salonZone').classList.remove('has-file');
   document.getElementById('memberZone').classList.remove('has-file');
   document.getElementById('sentZone').classList.remove('has-file');
+  salonData = [];
   document.getElementById('cacheInfo').classList.remove('show');
   showStatus('uploadStatus', '저장 데이터가 초기화됐어요. 파일을 다시 업로드해주세요.', 'warning');
 }
@@ -528,7 +573,82 @@ function normName(n) {
 let enrolledNames = new Set();
 let sentNames     = new Set();
 let memberData    = [];  // 전환율 분석용
-let allApiItems   = [];  // API 전체 데이터 (영업중+폐업 통계용)
+let allApiItems   = [];  // 수집된 인허가 데이터
+let salonData     = [];  // 업로드된 인허가 파일 데이터
+
+// ── 인허가 파일 파싱 ──────────────────────────────────────────────
+function handleSalonFile(input) {
+  const file = input.files[0]; if (!file) return;
+  const ext = file.name.split('.').pop().toLowerCase();
+  showStatus('uploadStatus', '인허가 파일 분석 중...', 'info');
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      let data = [];
+
+      if (ext === 'csv') {
+        // CSV 파싱
+        const text = new TextDecoder('euc-kr').decode(new Uint8Array(e.target.result));
+        const lines = text.split('\n').filter(l => l.trim());
+        const headers = lines[0].split(',').map(h => h.trim().replace(/"/g,''));
+        data = lines.slice(1).map(line => {
+          const vals = line.split(',').map(v => v.trim().replace(/"/g,''));
+          const obj = {};
+          headers.forEach((h, i) => obj[h] = vals[i] || '');
+          return obj;
+        });
+      } else {
+        // xlsx/xls 파싱
+        const wb = XLSX.read(e.target.result, {type:'binary'});
+        // 첫 번째 시트 사용
+        data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {defval:''});
+      }
+
+      // 컬럼명 정규화 (localdata 포맷)
+      // 사업장명 / 도로명전체주소 / 업태구분명 / 인허가일자 / 의자수 / 소재지면적 / 도로명우편번호
+      salonData = data.filter(r => {
+        const name = r['사업장명'] || r['bplcNm'] || r['upsoNm'] || '';
+        return name.trim().length > 0;
+      });
+
+      // localStorage 캐시 (상호명+주소만 경량 저장)
+      try {
+        const cachePayload = JSON.stringify({
+          filename: file.name,
+          savedAt: new Date().toISOString(),
+          count: salonData.length,
+          // 전체 데이터는 용량이 크므로 핵심 필드만 저장
+          rows: salonData.map(r => ({
+            n: r['사업장명'] || r['bplcNm'] || '',
+            a: r['도로명전체주소'] || r['소재지전체주소'] || '',
+            z: r['도로명우편번호'] || r['sitePostNo'] || '',
+            d: r['인허가일자'] || r['apvPermYmd'] || '',
+            c: r['의자수'] || r['seatingCapacity'] || '',
+            t: r['업태구분명'] || r['uptaeNm'] || '',
+          }))
+        });
+        localStorage.setItem('beaupl_salon', cachePayload);
+      } catch(e) { /* 용량 초과 시 캐시 스킵 */ }
+
+      document.getElementById('salonFileName').textContent =
+        `✅ ${file.name} (${salonData.length.toLocaleString()}개 로드)`;
+      document.getElementById('salonZone').classList.add('has-file');
+      showStatus('uploadStatus',
+        `인허가 데이터 ${salonData.length.toLocaleString()}개 로드 완료 — 필터링 준비됨`, 'success');
+
+    } catch(err) {
+      showStatus('uploadStatus', '파일 파싱 오류: ' + err.message, 'error');
+      console.error(err);
+    }
+  };
+
+  if (ext === 'csv') {
+    reader.readAsArrayBuffer(file); // EUC-KR 대응
+  } else {
+    reader.readAsBinaryString(file);
+  }
+}
 
 function handleMemberFile(input) {
   const file = input.files[0]; if (!file) return;
@@ -699,7 +819,12 @@ async function runFetch() {
   const groupBy    = document.getElementById('groupBy').value;
   const fetchOrder = document.getElementById('fetchOrder').value;
 
-  if (!apiKey) { alert('API 키를 입력해주세요.'); return; }
+  // 인허가 파일 체크
+  if (!salonData.length) {
+    alert('인허가 엑셀 파일을 먼저 업로드해주세요.\n(STEP 2 → 인허가 데이터 업로드)');
+    return;
+  }
+  if (!apiKey) { /* API 키 없어도 파일 모드로 동작 */ }
 
   if (document.getElementById('saveKey').checked) {
     localStorage.setItem('beaupl_api_key', apiKey);
@@ -723,170 +848,61 @@ async function runFetch() {
     log('▶ API 호출 시작...');
     setProgress(5, '총 건수 확인 중...');
 
-    // ── beauty_salons API
-    // 우선순위: 최신 인허가순 > 전환율 높은 지역코드 순 호출 → 목표 달성 시 조기 종료
-    const baseUrl = 'https://apis.data.go.kr/1741000/beauty_salons/info';
+    // ── 인허가 파일 데이터 처리 (API 대체) ────────────────────────
+    log(`✅ 인허가 파일 모드 — ${salonData.length.toLocaleString()}개 로드됨`);
+    setProgress(10, '데이터 필터링 중...');
 
-    // 지역코드 — 뷰플샵 구매전환율 기준 내림차순 (개방자치단체코드.xlsx 참조)
-    // 대전 > 광주 > 울산 > 경기 > 대구 > 인천 > 서울 > 부산 > 강원 > 경남 > 경북 > 전북 > 전남 > 충남 > 충북 > 제주 > 세종
-    const REGION_PRIORITY = [
-      {name:'대전', code:'6300000_ALL'},
-      {name:'광주', code:'6290000_ALL'},
-      {name:'울산', code:'6310000_ALL'},
-      {name:'경기', code:'6410000_ALL'},
-      {name:'대구', code:'6270000_ALL'},
-      {name:'인천', code:'6280000_ALL'},
-      {name:'서울', code:'6110000_ALL'},
-      {name:'부산', code:'6260000_ALL'},
-      {name:'강원', code:'6530000_ALL'},
-      {name:'경남', code:'6480000_ALL'},
-      {name:'경북', code:'6470000_ALL'},
-      {name:'전북', code:'6540000_ALL'},
-      {name:'전남', code:'6460000_ALL'},
-      {name:'충남', code:'6440000_ALL'},
-      {name:'충북', code:'6430000_ALL'},
-      {name:'제주', code:'6500000_ALL'},
-      {name:'세종', code:'5690000_ALL'},
-    ];
+    // 전체 데이터를 allItems 형식으로 변환
+    allItems = salonData.map(r => ({
+      bplcNm:           r['사업장명']       || r['bplcNm']           || '',
+      rdnWhlAddr:       r['도로명전체주소'] || r['rdnWhlAddr']       || '',
+      sitewhlAddr:      r['소재지전체주소'] || r['sitewhlAddr']      || '',
+      rdnPostNo:        r['도로명우편번호'] || r['rdnPostNo']        || '',
+      uptaeNm:          r['업태구분명']     || r['uptaeNm']          || '',
+      trdStateNm:       r['영업상태명']     || r['trdStateNm']       || '',
+      apvPermYmd:       String(r['인허가일자'] || r['apvPermYmd']   || '').replace(/-/g,''),
+      seatingCapacity:  r['의자수']         || r['seatingCapacity']  || 0,
+      siteArea:         r['소재지면적']     || r['siteArea']         || 0,
+    }));
 
-    const EARLY_STOP_TARGET = topN * 8;  // 목표의 8배 후보 확보되면 조기 종료
-    let totalFetched = 0;
-    let earlyStop = false;
+    setProgress(20, '업태·영업상태 필터링 중...');
 
-    // CORS 연결 테스트 (첫 호출)
-    let res, data;
-    try {
-      const testParams = new URLSearchParams({
-        serviceKey: apiKey,
-        pageNo: '1', numOfRows: '1',
-        opnSfTeamCode: REGION_PRIORITY[0].code,
-        trdStateGbn: '1',
-        resultType: 'json',
-      });
-      res  = await fetch(`${baseUrl}?${testParams}`);
-      data = await res.json();
-    } catch(e) {
-      throw new Error(
-        'CORS 오류: 브라우저에서 API 직접 호출이 차단됐습니다.\n' +
-        '해결: data.go.kr → 마이페이지 → API 관리 → 서비스 URL에\n' +
-        'https://beauplshop.github.io 추가 후 10분 기다리고 다시 시도해 보세요.'
-      );
-    }
-
-    // API 응답 파싱 헬퍼
-    function parseItems(d) {
-      const b = d?.response?.body || d?.body || d;
-      const raw = b?.items?.item || b?.items || b?.item || [];
-      return Array.isArray(raw) ? raw : (raw && typeof raw === 'object' ? [raw] : []);
-    }
-    function parseTotal(d) {
-      const b = d?.response?.body || d?.body || {};
-      return parseInt(b?.totalCount || b?.total_count || 0);
-    }
-
-    // 클라이언트 필터 공통 함수
-    function clientFilter(arr) {
-      return arr.filter(item => {
-        const state = String(item.trdStateGbn || '');
-        if (state && state !== '1' && !state.includes('영업')) return false;
-        if (bizType === '일반미용업') {
-          const uptae = item.uptaeNm || item.indsNm || '';
-          if (!uptae.includes('일반미용')) return false;
-        }
-        return true;
-      });
-    }
-
-    if (fetchOrder === 'region_first') {
-      // ── 모드 A: 전환율 높은 지역순 호출 ──────────────────────────
-      log('📍 호출 모드: 전환율 높은 지역순 (대전→광주→울산→경기→...)');
-      for (let ri = 0; ri < REGION_PRIORITY.length; ri++) {
-        if (earlyStop) break;
-        const region = REGION_PRIORITY[ri];
-
-        const countParams = new URLSearchParams({
-          serviceKey: apiKey,
-          pageNo: '1', numOfRows: '1',
-          opnSfTeamCode: region.code,
-          trdStateGbn: '1',
-          resultType: 'json',
-        });
-        const cRes  = await fetch(`${baseUrl}?${countParams}`);
-        const cData = await cRes.json();
-        const regionTotal = parseTotal(cData);
-        if (!regionTotal) { log(`  ${region.name}: 데이터 없음`, 'warn'); continue; }
-
-        const regionPages = Math.ceil(regionTotal / PAGE_SIZE);
-        log(`▶ ${region.name} — 영업중 ${regionTotal.toLocaleString()}개 / ${regionPages}p`, 'ok');
-
-        for (page = 1; page <= regionPages; page++) {
-          const pct = Math.round(((ri / REGION_PRIORITY.length) + (page / regionPages / REGION_PRIORITY.length)) * 60);
-          setProgress(5 + pct, `[지역순] ${region.name} ${page}/${regionPages}p | 누적 ${allItems.length.toLocaleString()}건`);
-
-          const p2 = new URLSearchParams({
-            serviceKey: apiKey,
-            pageNo: String(page), numOfRows: String(PAGE_SIZE),
-            opnSfTeamCode: region.code,
-            trdStateGbn: '1', resultType: 'json',
-          });
-          const r2 = await fetch(`${baseUrl}?${p2}`);
-          const d2 = await r2.json();
-          let arr = clientFilter(parseItems(d2));
-          // 지역 내 최신 인허가순 정렬
-          arr.sort((a, b) => (b.apvPermYmd || '').localeCompare(a.apvPermYmd || ''));
-          allItems.push(...arr);
-
-          if (allItems.length >= EARLY_STOP_TARGET) {
-            log(`✅ 조기 종료 — ${allItems.length.toLocaleString()}건 (${region.name} ${page}p)`, 'ok');
-            earlyStop = true; break;
-          }
-          await new Promise(r => setTimeout(r, 60));
-        }
-        log(`  ${region.name} 완료 — 누적 ${allItems.length.toLocaleString()}건`);
+    // 클라이언트 필터: 영업중 + 헤어 업태
+    allItems = allItems.filter(item => {
+      // 영업상태: 영업/정상만 (폐업·휴업 제외)
+      const state = item.trdStateNm || '';
+      if (state && !state.includes('영업') && !state.includes('정상')) return false;
+      // 업태: 일반미용업 필터
+      if (bizType === '일반미용업') {
+        const uptae = item.uptaeNm || '';
+        if (!uptae.includes('일반미용') && !uptae.includes('미용업')) return false;
       }
+      return true;
+    });
+    log(`영업중 일반미용업: ${allItems.length.toLocaleString()}개`, 'ok');
+    setProgress(35, '정렬 중...');
 
+    // 정렬: fetchOrder 기준
+    if (fetchOrder === 'latest_first') {
+      // 최신 인허가순 (apvPermYmd 내림차순)
+      allItems.sort((a, b) => (b.apvPermYmd || '').localeCompare(a.apvPermYmd || ''));
+      log('정렬: 최신 인허가순');
     } else {
-      // ── 모드 B: 최신 인허가순 (전국 균등) ──────────────────────────
-      log('📅 호출 모드: 최신 인허가순 (전국 전체, 최신 오픈 우선)');
-      // 1차: 전체 건수 확인
-      const cntParams = new URLSearchParams({
-        serviceKey: apiKey, pageNo: '1', numOfRows: '1',
-        trdStateGbn: '1', resultType: 'json',
+      // 전환율 높은 지역순 정렬
+      const regionOrder = ['대전','광주','울산','경기','대구','인천','서울','부산',
+        '강원','경남','경북','전북','전남','충남','충북','제주','세종'];
+      allItems.sort((a, b) => {
+        const addrA = a.rdnWhlAddr || a.sitewhlAddr || '';
+        const addrB = b.rdnWhlAddr || b.sitewhlAddr || '';
+        const rA = regionOrder.findIndex(r => addrA.includes(r));
+        const rB = regionOrder.findIndex(r => addrB.includes(r));
+        const orderA = rA === -1 ? 99 : rA;
+        const orderB = rB === -1 ? 99 : rB;
+        if (orderA !== orderB) return orderA - orderB;
+        // 동일 지역 내 최신 인허가순
+        return (b.apvPermYmd || '').localeCompare(a.apvPermYmd || '');
       });
-      const cntRes  = await fetch(`${baseUrl}?${cntParams}`);
-      const cntData = await cntRes.json();
-      const globalTotal = parseTotal(cntData);
-      if (!globalTotal) throw new Error('전체 건수를 가져올 수 없습니다. API 키를 확인하세요.');
-      log(`전국 영업중 총 ${globalTotal.toLocaleString()}개 — 최신순 수집 시작`, 'ok');
-
-      const globalPages = Math.ceil(globalTotal / PAGE_SIZE);
-      const maxPages    = Math.min(globalPages, 100);
-
-      for (page = 1; page <= maxPages; page++) {
-        setProgress(5 + Math.round(page / maxPages * 60),
-          `[최신순] 전국 ${page}/${maxPages}p | 누적 ${allItems.length.toLocaleString()}건`);
-
-        const p2 = new URLSearchParams({
-          serviceKey: apiKey,
-          pageNo: String(page), numOfRows: String(PAGE_SIZE),
-          trdStateGbn: '1', resultType: 'json',
-        });
-        const r2 = await fetch(`${baseUrl}?${p2}`);
-        const d2 = await r2.json();
-        let arr = clientFilter(parseItems(d2));
-        // 페이지 내 최신 인허가순 정렬
-        arr.sort((a, b) => (b.apvPermYmd || '').localeCompare(a.apvPermYmd || ''));
-        allItems.push(...arr);
-
-        if (page % 10 === 0) log(`  ${page}p 완료 | 누적 ${allItems.length.toLocaleString()}건`);
-
-        if (allItems.length >= EARLY_STOP_TARGET) {
-          log(`✅ 조기 종료 — ${allItems.length.toLocaleString()}건 (${page}p)`, 'ok');
-          earlyStop = true; break;
-        }
-        await new Promise(r => setTimeout(r, 60));
-      }
-      if (!earlyStop) log(`전국 수집 완료 — 총 ${allItems.length.toLocaleString()}건`, 'ok');
+      log('정렬: 전환율 높은 지역순 → 지역 내 최신 인허가순');
     }
 
     totalCount = allItems.length;
