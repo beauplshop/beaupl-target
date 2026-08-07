@@ -225,7 +225,7 @@
   <div>
     <div class="logo" style="display:flex; align-items:baseline; gap:10px;">
         뷰플샵 <span>타겟 선별기</span>
-        <span style="font-size:11px; font-weight:400; color:#a78bfa; background:rgba(167,139,250,.15); padding:2px 8px; border-radius:20px; letter-spacing:.3px;">v2.8</span>
+        <span style="font-size:11px; font-weight:400; color:#a78bfa; background:rgba(167,139,250,.15); padding:2px 8px; border-radius:20px; letter-spacing:.3px;">v2.9</span>
       </div>
     <div class="subtitle">미용업 인허가 파일 업로드 → 발송 대상 자동 선별</div>
   </div>
@@ -537,6 +537,10 @@ function loadCachedData() {
         trdStateGbn:     r.g || '',
         siteArea:        r.f || 0,
       }));
+      // 캐시 복원 후 프랜차이즈 집계 재계산
+      const nc = {};
+      salonData.forEach(r => { const n = normName(r.bplcNm||''); if(n) nc[n]=(nc[n]||0)+1; });
+      franchiseNameSet = new Set(Object.keys(nc).filter(n => nc[n] >= 5));
       document.getElementById('salonFileName').textContent =
         `✅ ${parsed.filename} (${parsed.count.toLocaleString()}개) — 저장됨`;
       document.getElementById('salonZone').classList.add('has-file');
@@ -1131,12 +1135,14 @@ function renderConvAnalysis(apiItems, candidateCount) {
   }
 
   const ref = new Date('2026-01-01');
-  const totalApi  = apiItems.length;  // 전체 영업중 (API 수집분)
+  const totalApi  = apiItems.length;
 
-  // 인증완료 회원 필터
-  const authMembers = memberData.filter(r =>
-    (r['살롱회원'] === '인증완료') && (r['탈퇴여부'] !== '탈퇴회원')
-  );
+  // 인증완료 회원 필터 (탈퇴회원 제외)
+  const authMembers = memberData.filter(r => {
+    const s = r['살롱회원'] || '';
+    const t = r['탈퇴여부'] || r['탈퇴'] || '';
+    return s === '인증완료' && !t.includes('탈퇴');
+  });
   const totalAuth = authMembers.length;
 
   // 구매전환
@@ -1167,12 +1173,12 @@ function renderConvAnalysis(apiItems, candidateCount) {
     <div class="kpi" style="border-top-color:#166534;">
       <div class="kpi-label">인증완료 회원</div>
       <div class="kpi-val" style="color:#166534;">${totalAuth.toLocaleString()}</div>
-      <div class="kpi-sub">전체 대비 ${(totalAuth/totalApi*100).toFixed(2)}%</div>
+      <div class="kpi-sub">전체 대비 ${totalApi>0?(totalAuth/totalApi*100).toFixed(2)+'%':'-'}</div>
     </div>
     <div class="kpi" style="border-top-color:#c2410c;">
       <div class="kpi-label">구매 전환</div>
       <div class="kpi-val" style="color:#c2410c;">${buyers.toLocaleString()}</div>
-      <div class="kpi-sub">인증완료 대비 ${(buyers/totalAuth*100).toFixed(1)}%</div>
+      <div class="kpi-sub">인증완료 대비 ${totalAuth>0?(buyers/totalAuth*100).toFixed(1)+'%':'-'}</div>
     </div>
     <div class="kpi" style="border-top-color:#7c3aed;">
       <div class="kpi-label">우편 경로 가입</div>
@@ -1182,7 +1188,7 @@ function renderConvAnalysis(apiItems, candidateCount) {
     <div class="kpi" style="border-top-color:#dc2626;">
       <div class="kpi-label">폐업 추정</div>
       <div class="kpi-val" style="color:#dc2626;">${closedEst.toLocaleString()}</div>
-      <div class="kpi-sub">인증완료 대비 ${(closedEst/totalAuth*100).toFixed(1)}%</div>
+      <div class="kpi-sub">인증완료 대비 ${totalAuth>0?(closedEst/totalAuth*100).toFixed(1)+'%':'-'}</div>
     </div>
   `;
 
