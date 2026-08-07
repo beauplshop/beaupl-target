@@ -500,9 +500,15 @@ function loadCachedData() {
       const parsed = JSON.parse(cachedSalon);
       // 경량 캐시에서 salonData 복원
       salonData = parsed.rows.map(r => ({
-        '사업장명': r.n, '도로명전체주소': r.a,
-        '도로명우편번호': r.z, '인허가일자': r.d,
-        '의자수': r.c, '업태구분명': r.t,
+        bplcNm:          r.n || '',
+        rdnWhlAddr:      r.a || '',
+        rdnPostNo:       r.z || '',
+        apvPermYmd:      r.d || '',
+        seatingCapacity: r.c || 0,
+        uptaeNm:         r.t || '',
+        trdStateNm:      r.s || '',
+        trdStateGbn:     r.g || '',
+        siteArea:        r.f || 0,
       }));
       document.getElementById('salonFileName').textContent =
         `✅ ${parsed.filename} (${parsed.count.toLocaleString()}개) — 저장됨`;
@@ -605,12 +611,32 @@ function handleSalonFile(input) {
         data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {defval:''});
       }
 
-      // 컬럼명 정규화 (localdata 포맷)
-      // 사업장명 / 도로명전체주소 / 업태구분명 / 인허가일자 / 의자수 / 소재지면적 / 도로명우편번호
-      salonData = data.filter(r => {
-        const name = r['사업장명'] || r['bplcNm'] || r['upsoNm'] || '';
-        return name.trim().length > 0;
-      });
+      // 컬럼 정규화: localdata 엑셀 포맷 → 내부 표준 키로 변환
+      salonData = data
+        .filter(r => {
+          const name = r['사업장명'] || r['bplcNm'] || r['upsoNm'] || '';
+          return String(name).trim().length > 0;
+        })
+        .map(r => ({
+          // 사업장명
+          bplcNm:         r['사업장명']         || r['bplcNm']        || '',
+          // 주소
+          rdnWhlAddr:     r['도로명전체주소']   || r['rdnWhlAddr']    || '',
+          sitewhlAddr:    r['소재지전체주소']   || r['sitewhlAddr']   || '',
+          // 우편번호
+          rdnPostNo:      String(r['도로명우편번호'] || r['rdnPostNo'] || '').replace(/\.0$/, ''),
+          // 업태
+          uptaeNm:        r['업태구분명']       || r['위생업태명']    || r['uptaeNm'] || '',
+          // 영업상태
+          trdStateNm:     r['영업상태명']       || r['trdStateNm']   || '',
+          trdStateGbn:    String(r['영업상태구분코드'] || r['trdStateGbn'] || ''),
+          // 인허가일자 (YYYYMMDD 형식으로 통일)
+          apvPermYmd:     String(r['인허가일자'] || r['apvPermYmd']  || '').replace(/-/g,'').slice(0,8),
+          // 의자수 (점수 계산용)
+          seatingCapacity: parseFloat(r['의자수'] || r['seatingCapacity'] || 0) || 0,
+          // 면적
+          siteArea:       parseFloat(r['소재지면적'] || r['siteArea'] || 0) || 0,
+        }));
 
       // localStorage 캐시 (상호명+주소만 경량 저장)
       try {
@@ -620,12 +646,15 @@ function handleSalonFile(input) {
           count: salonData.length,
           // 전체 데이터는 용량이 크므로 핵심 필드만 저장
           rows: salonData.map(r => ({
-            n: r['사업장명'] || r['bplcNm'] || '',
-            a: r['도로명전체주소'] || r['소재지전체주소'] || '',
-            z: r['도로명우편번호'] || r['sitePostNo'] || '',
-            d: r['인허가일자'] || r['apvPermYmd'] || '',
-            c: r['의자수'] || r['seatingCapacity'] || '',
-            t: r['업태구분명'] || r['uptaeNm'] || '',
+            n: r.bplcNm        || '',
+            a: r.rdnWhlAddr    || r.sitewhlAddr || '',
+            z: r.rdnPostNo     || '',
+            d: r.apvPermYmd    || '',
+            c: r.seatingCapacity || 0,
+            t: r.uptaeNm       || '',
+            s: r.trdStateNm    || '',
+            g: r.trdStateGbn   || '',
+            f: r.siteArea      || 0,
           }))
         });
         localStorage.setItem('beaupl_salon', cachePayload);
@@ -852,26 +881,19 @@ async function runFetch() {
     log(`✅ 인허가 파일 모드 — ${salonData.length.toLocaleString()}개 로드됨`);
     setProgress(10, '데이터 필터링 중...');
 
-    // 전체 데이터를 allItems 형식으로 변환
-    allItems = salonData.map(r => ({
-      bplcNm:           r['사업장명']       || r['bplcNm']           || '',
-      rdnWhlAddr:       r['도로명전체주소'] || r['rdnWhlAddr']       || '',
-      sitewhlAddr:      r['소재지전체주소'] || r['sitewhlAddr']      || '',
-      rdnPostNo:        r['도로명우편번호'] || r['rdnPostNo']        || '',
-      uptaeNm:          r['업태구분명']     || r['uptaeNm']          || '',
-      trdStateNm:       r['영업상태명']     || r['trdStateNm']       || '',
-      apvPermYmd:       String(r['인허가일자'] || r['apvPermYmd']   || '').replace(/-/g,''),
-      seatingCapacity:  r['의자수']         || r['seatingCapacity']  || 0,
-      siteArea:         r['소재지면적']     || r['siteArea']         || 0,
-    }));
+    // salonData는 handleSalonFile에서 이미 표준 키로 정규화됨
+    allItems = salonData;
 
     setProgress(20, '업태·영업상태 필터링 중...');
 
     // 클라이언트 필터: 영업중 + 헤어 업태
     allItems = allItems.filter(item => {
       // 영업상태: 영업/정상만 (폐업·휴업 제외)
-      const state = item.trdStateNm || '';
-      if (state && !state.includes('영업') && !state.includes('정상')) return false;
+      const stateGbn = String(item.trdStateGbn || '');
+      const stateNm  = String(item.trdStateNm  || '');
+      // 영업상태구분코드 1 = 영업/정상
+      if (stateGbn && stateGbn !== '1') return false;
+      if (!stateGbn && stateNm && !stateNm.includes('영업') && !stateNm.includes('정상')) return false;
       // 업태: 일반미용업 필터
       if (bizType === '일반미용업') {
         const uptae = item.uptaeNm || '';
