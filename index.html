@@ -225,7 +225,7 @@
   <div>
     <div class="logo" style="display:flex; align-items:baseline; gap:10px;">
         뷰플샵 <span>타겟 선별기</span>
-        <span style="font-size:11px; font-weight:400; color:#a78bfa; background:rgba(167,139,250,.15); padding:2px 8px; border-radius:20px; letter-spacing:.3px;">v2.7</span>
+        <span style="font-size:11px; font-weight:400; color:#a78bfa; background:rgba(167,139,250,.15); padding:2px 8px; border-radius:20px; letter-spacing:.3px;">v2.8</span>
       </div>
     <div class="subtitle">미용업 인허가 파일 업로드 → 발송 대상 자동 선별</div>
   </div>
@@ -453,8 +453,8 @@
       <table>
         <thead>
           <tr>
-            <th>순위</th><th>그룹</th><th>사업장명</th><th>주소</th>
-            <th>우편번호</th><th>연수구간</th><th>의자수</th><th>점수</th>
+            <th>순위</th><th>그룹</th><th>사업장명</th><th>주소(시/구)</th>
+            <th>우편번호</th><th>영업연수</th><th>인허가일자</th><th>점수</th>
           </tr>
         </thead>
         <tbody id="resultBody"></tbody>
@@ -478,12 +478,27 @@ const REGION_SCORE = {
 // 의자수/면적: 데이터 미검증으로 제거
 // 프랜차이즈: 키워드+의자수10석+ 기준 제외
 
-const FRANCHISE_KEYWORDS = [
-  '준오','이가자','박준뷰티','이철','리안헤어',
-  '블루클럽','나이스가이','컷트클럽','헤어뱅크','팔공뷰티',
-  '토니앤가이','쟈끄데상쥬','오가닉살롱','첫눈에헤어',
-  '이미지박사','버블헤어','세이지우드','손앤박',
+// 업종 제외 키워드 (일반미용업이어도 실제 헤어 아닌 경우)
+const EXCLUDE_KEYWORDS = [
+  // 두피
+  '두피','헤드',
+  // 네일
+  '네일','발관리','발마사지','페디',
+  // 메이크업
+  '눈썹','브로우','brow','메이크업','makeup',
+  // 피부
+  '피부','스킨',
+  // 왁싱
+  '왁싱','waxing',
+  // 힐링/마사지
+  '에스테틱','약손','마사지','수기','스파','헬스','아로마',
+  // 맨즈/바버
+  '맨즈','바버','barber',
 ];
+
+// 프랜차이즈: 동일 상호명 5개 이상 = 런타임에 계산
+// (handleSalonFile에서 미리 집계)
+let franchiseNameSet = new Set();
 
 // ── 저장된 키 + 캐시 불러오기 ──────────────────────────────────────
 window.addEventListener('load', () => {
@@ -672,6 +687,15 @@ function handleSalonFile(input) {
         localStorage.setItem('beaupl_salon', cachePayload);
       } catch(e) { /* 용량 초과 시 캐시 스킵 */ }
 
+      // 프랜차이즈: 동일 상호명 5개 이상 집계
+      const nameCount = {};
+      salonData.forEach(r => {
+        const n = normName(r.bplcNm || '');
+        if (n) nameCount[n] = (nameCount[n] || 0) + 1;
+      });
+      franchiseNameSet = new Set(Object.keys(nameCount).filter(n => nameCount[n] >= 5));
+      console.log(`프랜차이즈 상호(5개+): ${franchiseNameSet.size}개`);
+
       document.getElementById('salonFileName').textContent =
         `✅ ${file.name} (${salonData.length.toLocaleString()}개 로드)`;
       document.getElementById('salonZone').classList.add('has-file');
@@ -846,12 +870,13 @@ function scoreRow(item, refDate) {
     }
   }
 
-  // 3. 프랜차이즈 여부 (제외 플래그)
+  // 3. 제외 여부 (프랜차이즈 + 업종 제외)
   const name = item.bplcNm || '';
+  const nameLower = name.toLowerCase();
+  const isExcludeKeyword = EXCLUDE_KEYWORDS.some(kw => nameLower.includes(kw.toLowerCase()));
   const isFranchise =
-    FRANCHISE_KEYWORDS.some(kw => name.includes(kw)) ||
-    /\d+\s*(호점|지점)$/.test(name) ||
-    parseFloat(item.seatingCapacity || 0) >= 10;
+    franchiseNameSet.has(normName(name)) ||   // 동일 상호 5개+
+    /\d+\s*(호점|지점)$/.test(name);          // 번호 지점명
 
   return {
     sRegion,
@@ -860,6 +885,7 @@ function scoreRow(item, refDate) {
     region,
     ageLabel: yearsNum < 2 ? '0~2년(신규)' : '2년+',
     isFranchise,
+    isExcludeKeyword,
   };
 }
 
@@ -977,20 +1003,24 @@ async function runFetch() {
       if (sentNames.has(nn)) continue;        // 발송이력
 
       const sc = scoreRow(item, refDate);
-      if (sc.isFranchise) continue;           // 프랜차이즈 제외
+      if (sc.isExcludeKeyword) continue;      // 업종 제외 (두피/네일/왁싱 등)
+      if (sc.isFranchise) continue;           // 프랜차이즈 제외 (동일 상호 5개+)
       if (sc.total < minScore) continue;
+
+      // 주소 없으면 제외
+      const addr = item.rdnWhlAddr || item.sitewhlAddr || '';
+      if (!addr.trim()) continue;
 
       scored.push({
         name,
-        addr: item.rdnWhlAddr || item.sitewhlAddr || '',
-        zipcode: item.rdnPostNo || item.postNo || '',
+        addr,
+        zipcode: String(item.rdnPostNo || '').replace(/\.0$/,''),
         ageLabel: sc.ageLabel,
-        chairs: item.seatingCapacity || '',
         score: sc.total,
         region: sc.region,
         licenseDate: item.apvPermYmd || '',
+        mgtNo: item.mgtNo || '',
         nn,
-        _sc: sc,
       });
     }
 
@@ -1156,54 +1186,58 @@ function renderConvAnalysis(apiItems, candidateCount) {
     </div>
   `;
 
-  // 영업연수별 전환율 테이블
-  const ageGroups = ['1년미만','1~2년','2~3년','3~5년','5~7년','7~10년','10~15년','15년+'];
-  const ageBins   = [[0,1],[1,2],[2,3],[3,5],[5,7],[7,10],[10,15],[15,999]];
+  // 영업연수 2분류 (신규 0~2년 / 기존 2년+)
+  const ageGroups = [['0~2년 (신규)', 0, 2], ['2년+ (기존)', 2, 999]];
+  const safe = (n, d) => isNaN(n) || !isFinite(n) ? d : n;
 
-  const rows = ageGroups.map((label, i) => {
-    const [lo, hi] = ageBins[i];
+  const convRows = ageGroups.map(([label, lo, hi]) => {
     const apiCount = apiItems.filter(item => {
       if (!item.apvPermYmd) return false;
       const d = item.apvPermYmd.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3');
       const yr = (ref - new Date(d)) / (1000*60*60*24*365.25);
       return yr >= lo && yr < hi;
     }).length;
-
-    // 해당 연수 구간 회원 (상호명 기반으로 매칭하기 어려우므로 비율로 추정)
-    const estAuth  = apiCount > 0 ? Math.round(totalAuth * (apiCount / totalApi)) : 0;
-    const estBuyer = apiCount > 0 ? Math.round(buyers * (apiCount / totalApi)) : 0;
-
+    const ratio    = totalApi > 0 ? apiCount / totalApi : 0;
+    const estAuth  = Math.round(totalAuth * ratio);
+    const estBuyer = Math.round(buyers * ratio);
+    const estClosed= Math.round(closedEst * ratio);
     return `<tr>
       <td style="padding:7px 12px; border-bottom:1px solid #f0f2f5; font-weight:600;">${label}</td>
       <td style="padding:7px 12px; border-bottom:1px solid #f0f2f5; text-align:right;">${apiCount.toLocaleString()}</td>
       <td style="padding:7px 12px; border-bottom:1px solid #f0f2f5; text-align:right;">${estAuth.toLocaleString()}</td>
       <td style="padding:7px 12px; border-bottom:1px solid #f0f2f5; text-align:right; color:#166534; font-weight:700;">
-        ${apiCount > 0 ? (estAuth/apiCount*100).toFixed(2)+'%' : '-'}
+        ${apiCount > 0 ? safe(estAuth/apiCount*100,0).toFixed(2)+'%' : '-'}
       </td>
       <td style="padding:7px 12px; border-bottom:1px solid #f0f2f5; text-align:right; color:#c2410c; font-weight:700;">
-        ${estAuth > 0 ? (estBuyer/apiCount*100).toFixed(2)+'%' : '-'}
+        ${apiCount > 0 ? safe(estBuyer/apiCount*100,0).toFixed(2)+'%' : '-'}
       </td>
+      <td style="padding:7px 12px; border-bottom:1px solid #f0f2f5; text-align:right; color:#dc2626;">${estClosed.toLocaleString()}</td>
       <td style="padding:7px 12px; border-bottom:1px solid #f0f2f5; text-align:right; color:#dc2626;">
-        ${Math.round(closedEst * (apiCount / totalApi)).toLocaleString()}
-      </td>
-      <td style="padding:7px 12px; border-bottom:1px solid #f0f2f5; text-align:right; color:#dc2626;">
-        ${apiCount > 0 ? (closedEst * (apiCount / totalApi) / totalAuth * 100).toFixed(1)+'%' : '-'}
+        ${totalAuth > 0 ? safe(estClosed/totalAuth*100,0).toFixed(1)+'%' : '-'}
       </td>
     </tr>`;
   });
 
-  // 합계 행
-  rows.push(`<tr style="background:#f0f2f5; font-weight:800;">
+  convRows.push(`<tr style="background:#f0f2f5; font-weight:800;">
     <td style="padding:8px 12px;">합계</td>
     <td style="padding:8px 12px; text-align:right;">${totalApi.toLocaleString()}</td>
     <td style="padding:8px 12px; text-align:right;">${totalAuth.toLocaleString()}</td>
-    <td style="padding:8px 12px; text-align:right; color:#166534;">${(totalAuth/totalApi*100).toFixed(2)}%</td>
-    <td style="padding:8px 12px; text-align:right; color:#c2410c;">${(buyers/totalApi*100).toFixed(2)}%</td>
+    <td style="padding:8px 12px; text-align:right; color:#166534;">${totalApi>0?safe(totalAuth/totalApi*100,0).toFixed(2)+'%':'-'}</td>
+    <td style="padding:8px 12px; text-align:right; color:#c2410c;">${totalApi>0?safe(buyers/totalApi*100,0).toFixed(2)+'%':'-'}</td>
     <td style="padding:8px 12px; text-align:right; color:#dc2626;">${closedEst.toLocaleString()}</td>
-    <td style="padding:8px 12px; text-align:right; color:#dc2626;">${(closedEst/totalAuth*100).toFixed(1)}%</td>
+    <td style="padding:8px 12px; text-align:right; color:#dc2626;">${totalAuth>0?safe(closedEst/totalAuth*100,0).toFixed(1)+'%':'-'}</td>
   </tr>`);
 
-  document.getElementById('convBody').innerHTML = rows.join('');
+  document.getElementById('convBody').innerHTML = convRows.join('');
+}
+
+// 주소에서 시/도 + 시군구 추출 (2단계)
+function addrShort(addr) {
+  if (!addr) return '';
+  // 도로명 or 지번 주소에서 시도+시군구만 추출
+  const m = addr.match(/^(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주)[^\s]*\s+([^\s]+[시군구])/);
+  if (m) return m[1] + ' ' + m[2];
+  return addr.slice(0, 12);
 }
 
 // ── 테이블 렌더 ─────────────────────────────────────────────────────
@@ -1213,59 +1247,132 @@ function renderTable() {
   const sortBy       = document.getElementById('sortBy').value;
 
   let rows = [...resultData];
+
+  // 주소 없는 것 제외
+  rows = rows.filter(r => r.addr && r.addr.trim().length > 0);
+
   if (filterGroup)  rows = rows.filter(r => r.group === filterGroup);
   if (filterRegion) rows = rows.filter(r => r.region === filterRegion);
 
-  if (sortBy === 'score')   rows.sort((a,b) => b.score - a.score);
-  if (sortBy === 'age_new') rows.sort((a,b) => (a.licenseDate||'').localeCompare(b.licenseDate||''));
-  if (sortBy === 'age_old') rows.sort((a,b) => (b.licenseDate||'').localeCompare(a.licenseDate||''));
+  // 정렬: 우편번호 없으면 후순위
+  const hasZip   = rows.filter(r => r.zipcode && String(r.zipcode).length >= 5);
+  const noZip    = rows.filter(r => !r.zipcode || String(r.zipcode).length < 5);
 
-  const MAX_SCORE = 31;
+  let sortFn;
+  if (sortBy === 'score')   sortFn = (a,b) => b.score - a.score;
+  else if (sortBy === 'age_new') sortFn = (a,b) => (a.licenseDate||'').localeCompare(b.licenseDate||'');
+  else if (sortBy === 'age_old') sortFn = (a,b) => (b.licenseDate||'').localeCompare(a.licenseDate||'');
+  else sortFn = (a,b) => b.score - a.score;
+
+  hasZip.sort(sortFn);
+  noZip.sort(sortFn);
+  rows = [...hasZip, ...noZip];
+
+  const MAX_SCORE = 20;
   const tbody = document.getElementById('resultBody');
-  tbody.innerHTML = rows.slice(0, 200).map((r, i) => `
+  tbody.innerHTML = rows.slice(0, 200).map((r, i) => {
+    const shortAddr = addrShort(r.addr);
+    const licenseFormatted = r.licenseDate
+      ? r.licenseDate.replace(/(\d{4})(\d{2})(\d{2})/, '$1.$2.$3')
+      : '-';
+    return `
     <tr>
       <td>${i+1}</td>
-      <td><span class="badge ${r.group==='A'?'badge-a':r.group==='B'?'badge-b':'badge-c'}">${r.group}</span></td>
+      <td><span class="badge ${r.group==='A'?'badge-a':'badge-b'}">${r.group}</span></td>
       <td><strong>${r.name}</strong></td>
-      <td style="max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${r.addr}">${r.addr}</td>
-      <td>${r.zipcode}</td>
-      <td><span style='font-size:10px; padding:2px 6px; border-radius:10px; background:${r.ageLabel==="0~2년(신규)"?"#dcfce7":"#f1f5f9"}; color:${r.ageLabel==="0~2년(신규)"?"#166534":"#475569"};'>${r.ageLabel}</span></td>
-      <td>${r.chairs}</td>
+      <td title="${r.addr}">${shortAddr}</td>
+      <td>${r.zipcode || '<span style="color:#a0aec0">-</span>'}</td>
+      <td><span style='font-size:10px; padding:2px 6px; border-radius:10px; background:${r.ageLabel==='0~2년(신규)'?'#dcfce7':'#f1f5f9'}; color:${r.ageLabel==='0~2년(신규)'?'#166534':'#475569'};'>${r.ageLabel}</span></td>
+      <td style="font-size:11px; color:#718096;">${licenseFormatted}</td>
       <td>
         <div class="score-bar">
           <div class="score-fill" style="width:${Math.round(r.score/MAX_SCORE*60)}px"></div>
           <span class="score-num">${r.score}</span>
         </div>
       </td>
-    </tr>
-  `).join('');
+    </tr>`;
+  }).join('');
 
   document.getElementById('tableCount').textContent =
     `${rows.length.toLocaleString()}개 표시 중 (최대 200행 미리보기 / 전체 다운로드는 엑셀 버튼)`;
 }
 
+// 우편발송 고객 ↔ 뷰플샵 회원 매칭 (상호명+주소 기반)
+function buildMatchData() {
+  if (!sentNames.size || !memberData.length) return [];
+
+  // 회원 데이터 맵 (상호_norm → 회원정보)
+  const memberMap = {};
+  memberData.forEach(r => {
+    const n = normName(r['상호'] || '');
+    if (n) memberMap[n] = r;
+  });
+
+  // 발송 이력 × 회원 매칭
+  // salonData에서 실제 발송된 매장 찾기 (sentNames에 있는 것)
+  const matched = [];
+  salonData.forEach(item => {
+    const n = normName(item.bplcNm || '');
+    if (!sentNames.has(n)) return;  // 발송 이력 없음
+
+    const member = memberMap[n];
+    const addrMatch = member && (
+      (item.rdnWhlAddr || '').slice(0,15) === (member['주소'] || '').slice(0,15)
+    );
+    const nameMatch = !!member;
+
+    let confirm = '미매칭';
+    if (member) {
+      confirm = (nameMatch && addrMatch) ? '확인완료' : '확인필요';
+    }
+
+    matched.push({
+      관리번호:       item.mgtNo || '',
+      사업장명:       item.bplcNm || '',
+      도로명전체주소: item.rdnWhlAddr || '',
+      도로명우편번호: item.rdnPostNo || '',
+      가입경로:       member?.['가입경로'] || '',
+      고객태그:       member?.['회원태그'] || '',
+      아이디:         member?.['아이디'] || '',
+      회원구분:       member?.['살롱회원'] || '',
+      상호명:         member?.['상호'] || '',
+      사업자등록번호: member?.['사업자번호'] || '',
+      확인여부:       confirm,
+    });
+  });
+  return matched;
+}
+
 // ── 엑셀 다운로드 ────────────────────────────────────────────────────
 function downloadExcel() {
   if (!resultData.length) return;
-  const rows = resultData.map((r, i) => ({
-    순위: i+1,
-    그룹: r.group,
-    사업장명: r.name,
-    주소: r.addr,
-    우편번호: r.zipcode,
-    연수구간: r.ageLabel,
-    의자수: r.chairs,
-    우선순위점수: r.score,
-    인허가일자: r.licenseDate,
-    시도: r.region,
-  }));
+
+  // 발송 대상 시트
+  const rows = resultData
+    .filter(r => r.addr && r.addr.trim().length > 0)
+    .map((r, i) => ({
+      순위: i+1,
+      그룹: r.group,
+      사업장명: r.name,
+      주소: addrShort(r.addr),
+      주소전체: r.addr,
+      도로명우편번호: r.zipcode || '',
+      영업연수: r.ageLabel,
+      인허가일자: r.licenseDate ? r.licenseDate.replace(/(\d{4})(\d{2})(\d{2})/, '$1.$2.$3') : '',
+      우선순위점수: r.score,
+      시도: r.region,
+    }));
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), '발송대상전체');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.filter(r=>r['그룹']==='A')), 'A그룹');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.filter(r=>r['그룹']==='B')), 'B그룹');
-  const cRows = rows.filter(r=>r['그룹']==='C');
-  if (cRows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cRows), 'C그룹');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.filter(r=>r['그룹']==='A')), 'A그룹_신규');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.filter(r=>r['그룹']==='B')), 'B그룹_기존');
+
+  // 발송고객 ↔ 가입 회원 매칭 시트
+  const matchData = buildMatchData();
+  if (matchData.length) {
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(matchData), '발송-가입 매칭');
+  }
 
   const date = new Date().toISOString().slice(0,10).replace(/-/g,'');
   XLSX.writeFile(wb, `뷰플샵_발송대상_${date}.xlsx`);
