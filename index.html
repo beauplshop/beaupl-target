@@ -225,7 +225,7 @@
   <div>
     <div class="logo" style="display:flex; align-items:baseline; gap:10px;">
         뷰플샵 <span>타겟 선별기</span>
-        <span style="font-size:11px; font-weight:400; color:#a78bfa; background:rgba(167,139,250,.15); padding:2px 8px; border-radius:20px; letter-spacing:.3px;">v2.9</span>
+        <span style="font-size:11px; font-weight:400; color:#a78bfa; background:rgba(167,139,250,.15); padding:2px 8px; border-radius:20px; letter-spacing:.3px;">v3.0</span>
       </div>
     <div class="subtitle">미용업 인허가 파일 업로드 → 발송 대상 자동 선별</div>
   </div>
@@ -467,7 +467,7 @@
 
 <script>
 // ── 상수: 스코어링 가중치 (뷰플샵 데이터 검증 기반) ──────────────────
-// ── 점수 체계 (데이터 기반, v2.7) ──────────────────────────────
+// ── 점수 체계 (데이터 기반, v3.0) ──────────────────────────────
 // 지역: 뷰플샵 구매전환율 기반 (최대 10점)
 const REGION_SCORE = {
   '대전':10,'광주':9,'울산':9,'경기':8,'대구':8,
@@ -625,16 +625,28 @@ function handleSalonFile(input) {
       let data = [];
 
       if (ext === 'csv') {
-        // CSV 파싱
-        const text = new TextDecoder('euc-kr').decode(new Uint8Array(e.target.result));
-        const lines = text.split('\n').filter(l => l.trim());
-        const headers = lines[0].split(',').map(h => h.trim().replace(/"/g,''));
-        data = lines.slice(1).map(line => {
-          const vals = line.split(',').map(v => v.trim().replace(/"/g,''));
-          const obj = {};
-          headers.forEach((h, i) => obj[h] = vals[i] || '');
-          return obj;
-        });
+        // CSV 파싱 — XLSX 라이브러리 사용 (따옴표·쉼표 포함 필드 자동 처리)
+        // 인코딩 자동 감지: UTF-8 → 깨지면 EUC-KR
+        const buf = new Uint8Array(e.target.result);
+        let text = new TextDecoder('utf-8', {fatal:false}).decode(buf);
+        // 한글 깨짐 감지 (U+FFFD 비율)
+        const sample = text.slice(0, 2000);
+        const brokenRatio = (sample.match(/\uFFFD/g) || []).length / Math.max(sample.length, 1);
+        if (brokenRatio > 0.01) {
+          text = new TextDecoder('euc-kr').decode(buf);
+          console.log('인코딩: EUC-KR로 재해석');
+        } else {
+          console.log('인코딩: UTF-8');
+        }
+        // BOM 제거
+        text = text.replace(/^\uFEFF/, '');
+        // XLSX로 CSV 파싱 (따옴표 내 쉼표 안전 처리)
+        const wbCsv = XLSX.read(text, {type:'string'});
+        data = XLSX.utils.sheet_to_json(wbCsv.Sheets[wbCsv.SheetNames[0]], {defval:''});
+        // 헤더 진단 로그
+        if (data.length) {
+          console.log('CSV 컬럼:', Object.keys(data[0]).slice(0, 15).join(', '));
+        }
       } else {
         // xlsx/xls 파싱
         const wb = XLSX.read(e.target.result, {type:'binary'});
@@ -690,6 +702,21 @@ function handleSalonFile(input) {
         });
         localStorage.setItem('beaupl_salon', cachePayload);
       } catch(e) { /* 용량 초과 시 캐시 스킵 */ }
+
+      // 매핑 진단: 첫 항목 확인
+      if (salonData.length) {
+        const s0 = salonData[0];
+        console.log('매핑 샘플:', JSON.stringify({
+          사업장명: s0.bplcNm, 주소: (s0.rdnWhlAddr||'').slice(0,20),
+          인허가: s0.apvPermYmd, 상태: s0.trdStateGbn || s0.trdStateNm
+        }));
+        // 주소 매핑 실패 감지
+        const noAddr = salonData.slice(0,100).filter(r => !(r.rdnWhlAddr || r.sitewhlAddr)).length;
+        if (noAddr > 50) {
+          showStatus('uploadStatus',
+            `⚠️ 주소 컬럼 인식 실패 (${noAddr}/100) — 파일 컬럼명을 확인해주세요. F12 콘솔에서 'CSV 컬럼' 로그 확인`, 'warning');
+        }
+      }
 
       // 프랜차이즈: 동일 상호명 5개 이상 집계
       const nameCount = {};
