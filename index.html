@@ -228,7 +228,7 @@
 <body>
 
 <header>
-  <div class="logo">뷰플샵 <em>타겟 선별기</em> <span class="ver">v3.0</span></div>
+  <div class="logo">뷰플샵 <em>타겟 선별기</em> <span class="ver">v3.1</span></div>
   <div class="steps">
     <div class="sdot on" id="s1">1</div><div class="sline"></div>
     <div class="sdot" id="s2">2</div><div class="sline"></div>
@@ -341,7 +341,7 @@
         <button data-v="15" onclick="segSel(this)">15점+</button>
         <button data-v="17" onclick="segSel(this)">17점+</button>
       </div>
-      <div class="seg-hint">지역 최대 10점 + 신규(0~2년) 10점 · 프랜차이즈(동일상호 5개+)·업종키워드는 자동 제외</div>
+      <div class="seg-hint">지역 최대 10점 + 신규(0~2년) 10점 · 프랜차이즈(동일상호 3개+)·업종키워드는 자동 제외</div>
     </div>
 
     <button class="btn btn-run" id="runBtn" onclick="run()">▶ 필터링 및 선별 시작</button>
@@ -367,8 +367,9 @@
         <tbody id="convBody"></tbody>
       </table>
     </div>
-    <div class="conv-note">
-      ※ 가입 매장: 회원 상호명 ↔ 인허가 사업장명 매칭 · 폐업 추정: 회원 중 영업중 목록에 없는 매장
+    <div class="conv-note" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+      <span>※ 가입 매장: 회원 상호명 ↔ 인허가 사업장명 매칭 · 폐업 추정: 회원 중 영업중 목록에 없는 매장</span>
+      <button class="btn btn-dl btn-sm" onclick="downloadMatchExcel()" style="flex-shrink:0;">⬇ 발송-가입 매칭 엑셀</button>
     </div>
   </div>
 
@@ -437,6 +438,7 @@ const EXCLUDE_KW = [
   '왁싱','waxing',
   '에스테틱','약손','마사지','수기','스파','헬스','아로마',
   '맨즈','바버','barber',
+  '토탈','웰니스','스튜디오','페이스','바디','염색','붙임','남성',
 ];
 
 /* ═══════════════════ 전역 상태 ═══════════════════ */
@@ -640,7 +642,7 @@ function buildFranchiseSet() {
     const n = normName(s.name);
     if (n) cnt[n] = (cnt[n] || 0) + 1;
   }
-  franchiseSet = new Set(Object.keys(cnt).filter(n => cnt[n] >= 5));
+  franchiseSet = new Set(Object.keys(cnt).filter(n => cnt[n] >= 3));
 }
 
 function saveSalonCache(filename) {
@@ -1088,35 +1090,68 @@ function buildMatchSheet() {
     const m = mMap[nn];
     let confirm = '미매칭';
     if (m) {
+      // 상호명+주소 일치=확인완료 / 주소만 일치=확인필요
       const addrMatch = (s.addr||'').slice(0,15) === String(m['주소']||'').slice(0,15);
       confirm = addrMatch ? '확인완료' : '확인필요';
     }
     out.push({
-      관리번호: s.mgt, 사업장명: s.name, 도로명전체주소: s.addr,
+      인허가일자: fmtDate(s.date),
+      사업자명: s.name,
+      도로명전체주소: s.addr,
       도로명우편번호: s.zip,
-      가입경로: m?.['가입경로']||'', 고객태그: m?.['회원태그']||'',
-      아이디: m?.['아이디']||'', 회원구분: m?.['살롱회원']||'',
-      상호명: m?.['상호']||'', 사업자등록번호: m?.['사업자번호']||'',
+      관리번호: s.mgt,
+      가입경로: m?.['가입경로']||'',
+      고객태그: m?.['회원태그']||'',
+      아이디: m?.['아이디']||'',
+      회원구분: m?.['살롱회원']||'',
+      상호명: m?.['상호']||'',
+      사업자등록번호: m?.['사업자번호']||'',
       확인여부: confirm,
     });
   }
   return out;
 }
 
+function downloadMatchExcel() {
+  const match = buildMatchSheet();
+  if (!match.length) {
+    alert('매칭 데이터가 없습니다.\n인허가·회원·발송이력 파일을 모두 업로드한 후 선별을 실행해주세요.');
+    return;
+  }
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(match), '발송-가입 매칭');
+  // 요약 시트
+  const 확인완료 = match.filter(r => r['확인여부'] === '확인완료').length;
+  const 확인필요 = match.filter(r => r['확인여부'] === '확인필요').length;
+  const 미매칭   = match.filter(r => r['확인여부'] === '미매칭').length;
+  const summary = [
+    { 구분: '발송 이력 매장 (인허가 매칭)', 건수: match.length },
+    { 구분: '확인완료 (상호+주소 일치)', 건수: 확인완료 },
+    { 구분: '확인필요 (상호만 일치)', 건수: 확인필요 },
+    { 구분: '미매칭 (미가입)', 건수: 미매칭 },
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summary), '요약');
+  const d = new Date().toISOString().slice(0,10).replace(/-/g,'');
+  XLSX.writeFile(wb, `뷰플샵_발송가입매칭_${d}.xlsx`);
+}
+
 function downloadExcel() {
   if (!resultData.length) return;
-  const rows = resultData.filter(r => r.addr).map((r, i) => ({
-    순위: i+1, 그룹: r.group, 사업장명: r.name,
-    '주소(시군구)': addrShort(r.addr), 주소전체: r.addr,
-    도로명우편번호: r.zip || '', 구분: r.isNew ? '신규(0~2년)' : '기존(2년+)',
-    인허가일자: fmtDate(r.date), 점수: r.score, 시도: r.region, 관리번호: r.mgt,
+  // 발송 양식: 오픈구분/인허가일자/사업장명/도로명전체주소/도로명우편번호/관리번호
+  const rows = resultData.filter(r => r.addr).map(r => ({
+    오픈구분: r.isNew ? '신규오픈' : '기오픈',
+    인허가일자: fmtDate(r.date),
+    사업장명: r.name,
+    도로명전체주소: r.addr,
+    도로명우편번호: r.zip || '',
+    관리번호: r.mgt,
+    그룹: r.group,
+    점수: r.score,
   }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), '발송대상전체');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.filter(r=>r['그룹']==='A')), 'A그룹');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.filter(r=>r['그룹']==='B')), 'B그룹');
-  const match = buildMatchSheet();
-  if (match.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(match), '발송-가입 매칭');
   const d = new Date().toISOString().slice(0,10).replace(/-/g,'');
   XLSX.writeFile(wb, `뷰플샵_발송대상_${d}.xlsx`);
 }
