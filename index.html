@@ -223,8 +223,11 @@
 
 <header>
   <div>
-    <div class="logo">뷰플샵 <span>타겟 선별기</span></div>
-    <div class="subtitle">미용업 인허가 API → 발송 대상 자동 선별</div>
+    <div class="logo" style="display:flex; align-items:baseline; gap:10px;">
+        뷰플샵 <span>타겟 선별기</span>
+        <span style="font-size:11px; font-weight:400; color:#a78bfa; background:rgba(167,139,250,.15); padding:2px 8px; border-radius:20px; letter-spacing:.3px;">v2.6</span>
+      </div>
+    <div class="subtitle">미용업 인허가 파일 업로드 → 발송 대상 자동 선별</div>
   </div>
   <div class="step-bar">
     <div class="step-dot active" id="s1">1</div>
@@ -362,9 +365,10 @@
         <label>최소 스코어 필터</label>
         <select id="minScore">
           <option value="0">제한 없음</option>
-          <option value="25">25점 이상</option>
-          <option value="27" selected>27점 이상 (권장)</option>
-          <option value="29">29점 이상 (고품질만)</option>
+          <option value="20">20점 이상</option>
+          <option value="22" selected>22점 이상 (권장)</option>
+          <option value="24">24점 이상</option>
+          <option value="26">26점 이상 (엄격)</option>
         </select>
       </div>
     </div>
@@ -967,7 +971,19 @@ async function runFetch() {
       });
     }
 
-    log(`필터 후 후보: ${scored.length.toLocaleString()}개`, 'ok');
+    log(`필터 후 후보: ${scored.length.toLocaleString()}개 (minScore ${minScore}점 이상)`, 'ok');
+    if (scored.length > 0) {
+      const sample = scored.slice(0,3).map(r => `${r.name}(${r.score}점/${r.region})`).join(', ');
+      log(`  상위 샘플: ${sample}`);
+    } else {
+      // 점수 분포 로그
+      const all_scores = allItems.slice(0,1000).map(item => {
+        const sc = scoreRow(item, refDate); return sc.total;
+      });
+      const avg = (all_scores.reduce((a,b)=>a+b,0)/all_scores.length).toFixed(1);
+      const max = Math.max(...all_scores);
+      log(`  ⚠️ 후보 0개 — 샘플 1000개 점수: 평균 ${avg}점, 최고 ${max}점. minScore를 낮춰보세요.`, 'warn');
+    }
     setProgress(80, '그룹 분할 및 상위 선별 중...');
 
     // ── 그룹 분할 ──────────────────────────────────────────
@@ -999,6 +1015,11 @@ async function runFetch() {
     }
 
     log(`A:${grpA.length} / B:${grpB.length}${grpC.length ? ' / C:'+grpC.length : ''}개 선별`, 'ok');
+    // 지역별 분포 로그
+    const regionDist = {};
+    resultData.forEach(r => { regionDist[r.region||'기타'] = (regionDist[r.region||'기타']||0)+1; });
+    const distStr = Object.entries(regionDist).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([r,n])=>`${r}:${n}`).join(' ');
+    log(`  지역 분포: ${distStr}`);
     setProgress(90, '전환율 분석 중...');
 
     // ── 전환율 분석 패널 ──────────────────────────────────
