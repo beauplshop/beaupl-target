@@ -3,1421 +3,1131 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>뷰플샵 발송 타겟 선별기</title>
+<title>뷰플샵 타겟 선별기</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root {
-    --bg: #f7f5f2;
-    --surface: #ffffff;
-    --surface2: #f0ede8;
-    --border: #e2ddd7;
-    --text: #1c1917;
-    --text-muted: #78716c;
-    --accent: #c2410c;       /* 뷰플샵 오렌지 계열 */
-    --accent-light: #fff7ed;
-    --accent-mid: #fdba74;
-    --green: #166534;
-    --green-bg: #f0fdf4;
-    --green-border: #bbf7d0;
-    --blue: #1e40af;
-    --blue-bg: #eff6ff;
-    --blue-border: #bfdbfe;
-    --yellow-bg: #fefce8;
-    --yellow-border: #fde68a;
-    --red-bg: #fef2f2;
-    --red-border: #fecaca;
-    --font-sans: 'Apple SD Gothic Neo', 'Pretendard', 'Malgun Gothic', system-ui, sans-serif;
-    --font-mono: 'SF Mono', 'Fira Code', monospace;
-    --radius: 10px;
-    --radius-sm: 6px;
-    --shadow: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.04);
-    --shadow-md: 0 4px 16px rgba(0,0,0,.10);
+    --black: #111111;
+    --accent: #F94810;
+    --accent-soft: #FFF1EC;
+    --gray-50: #FAFAFA;
+    --gray-100: #F5F5F5;
+    --gray-200: #E8E8E8;
+    --gray-300: #D4D4D4;
+    --gray-500: #8A8A8A;
+    --gray-700: #4A4A4A;
+    --white: #FFFFFF;
+    --green: #1B8B4B;
+    --green-bg: #EDF9F1;
+    --red-bg: #FEF1F1;
+    --red: #D63031;
+    --radius: 14px;
+    --radius-sm: 10px;
+    --shadow: 0 1px 4px rgba(0,0,0,.06);
+    --shadow-md: 0 4px 20px rgba(0,0,0,.08);
+    --font: 'Apple SD Gothic Neo','Pretendard','Malgun Gothic',system-ui,sans-serif;
   }
-
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family:var(--font-sans); background:var(--bg); color:var(--text); font-size:14px; line-height:1.6; min-height:100vh; }
+  body { font-family:var(--font); background:var(--gray-50); color:var(--black); font-size:14px; line-height:1.6; -webkit-font-smoothing:antialiased; }
 
-  /* HEADER */
+  /* ── HEADER ── */
   header {
-    background:var(--text);
-    color:#fafaf9;
-    padding:20px 32px;
-    display:flex; align-items:center; justify-content:space-between;
+    background:var(--black); color:var(--white);
+    padding:18px 28px; display:flex; align-items:center; justify-content:space-between;
+    position:sticky; top:0; z-index:100;
   }
-  header .logo { font-size:17px; font-weight:700; letter-spacing:-.3px; }
-  header .logo span { color:var(--accent-mid); }
-  header .subtitle { font-size:11px; color:#a8a29e; margin-top:2px; }
-  .step-bar { display:flex; gap:6px; align-items:center; }
-  .step-dot {
-    width:28px; height:28px; border-radius:50%;
+  .logo { font-size:16px; font-weight:800; display:flex; align-items:baseline; gap:8px; }
+  .logo em { color:var(--accent); font-style:normal; }
+  .ver {
+    font-size:10px; font-weight:600; color:var(--gray-300);
+    background:rgba(255,255,255,.1); padding:3px 9px; border-radius:20px;
+  }
+  .steps { display:flex; gap:5px; align-items:center; }
+  .sdot {
+    width:26px; height:26px; border-radius:50%;
     display:flex; align-items:center; justify-content:center;
-    font-size:11px; font-weight:700;
-    background:#44403c; color:#a8a29e;
-    transition:.2s;
+    font-size:11px; font-weight:800;
+    background:rgba(255,255,255,.12); color:var(--gray-500);
+    transition:.25s;
   }
-  .step-dot.active { background:var(--accent); color:white; }
-  .step-dot.done { background:#166534; color:white; }
-  .step-line { width:24px; height:2px; background:#44403c; }
+  .sdot.on { background:var(--accent); color:var(--white); }
+  .sdot.done { background:var(--white); color:var(--black); }
+  .sline { width:18px; height:2px; background:rgba(255,255,255,.15); }
 
-  /* LAYOUT */
-  main { max-width:960px; margin:0 auto; padding:28px 20px 60px; }
-
-  /* CARDS */
+  /* ── LAYOUT ── */
+  main { max-width:860px; margin:0 auto; padding:24px 18px 80px; }
   .card {
-    background:var(--surface);
-    border:1px solid var(--border);
-    border-radius:var(--radius);
-    padding:22px 24px;
-    margin-bottom:16px;
-    box-shadow:var(--shadow);
+    background:var(--white); border-radius:var(--radius);
+    padding:24px; margin-bottom:14px; box-shadow:var(--shadow);
   }
-  .card-title {
-    font-size:13px; font-weight:700; color:var(--text);
-    margin-bottom:14px; display:flex; align-items:center; gap:8px;
+  .ct {
+    font-size:15px; font-weight:800; margin-bottom:18px;
+    display:flex; align-items:center; gap:9px;
   }
-  .card-title .num {
-    width:22px; height:22px; background:var(--accent); color:white;
-    border-radius:50%; display:flex; align-items:center; justify-content:center;
-    font-size:11px; font-weight:800; flex-shrink:0;
+  .ct .n {
+    width:24px; height:24px; background:var(--black); color:var(--white);
+    border-radius:8px; display:flex; align-items:center; justify-content:center;
+    font-size:12px; font-weight:800; flex-shrink:0;
   }
 
-  /* INPUTS */
-  label { font-size:12px; font-weight:600; color:var(--text-muted); display:block; margin-bottom:5px; }
-  input[type=text], input[type=password], select {
-    width:100%; padding:9px 12px;
-    border:1px solid var(--border); border-radius:var(--radius-sm);
-    font-size:13px; font-family:var(--font-sans); color:var(--text);
-    background:var(--surface); outline:none; transition:.15s;
+  /* ── INPUT ── */
+  .lbl { font-size:12px; font-weight:700; color:var(--gray-700); display:block; margin-bottom:7px; }
+  input[type=text], input[type=password] {
+    width:100%; padding:13px 15px;
+    border:1.5px solid var(--gray-200); border-radius:var(--radius-sm);
+    font-size:14px; font-family:var(--font); color:var(--black);
+    background:var(--white); outline:none; transition:.15s;
   }
-  input:focus, select:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(194,65,12,.12); }
+  input:focus { border-color:var(--black); }
   input[type=file] { display:none; }
+  .row2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media(max-width:640px){ .row2 { grid-template-columns:1fr; } }
 
-  .input-row { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
-  @media(max-width:600px) { .input-row { grid-template-columns:1fr; } }
-
-  /* UPLOAD ZONE */
-  .upload-zone {
-    border:2px dashed var(--border); border-radius:var(--radius);
-    padding:28px; text-align:center; cursor:pointer;
-    transition:.2s; background:var(--surface2);
+  /* ── SEGMENT (토스 스타일) ── */
+  .seg-group { margin-bottom:18px; }
+  .seg {
+    display:flex; background:var(--gray-100); border-radius:12px; padding:4px; gap:3px;
   }
-  .upload-zone:hover { border-color:var(--accent); background:var(--accent-light); }
-  .upload-zone.has-file { border-color:#166534; background:var(--green-bg); border-style:solid; }
-  .upload-zone .icon { font-size:28px; margin-bottom:8px; }
-  .upload-zone .text { font-size:13px; color:var(--text-muted); }
-  .upload-zone .file-name { font-size:12px; font-weight:700; color:var(--green); margin-top:6px; }
+  .seg button {
+    flex:1; padding:12px 8px; border:none; border-radius:9px;
+    background:transparent; font-family:var(--font);
+    font-size:13px; font-weight:700; color:var(--gray-500);
+    cursor:pointer; transition:.18s; white-space:nowrap;
+  }
+  .seg button.on {
+    background:var(--white); color:var(--black);
+    box-shadow:0 2px 8px rgba(0,0,0,.09);
+  }
+  .seg button.on.accent { color:var(--accent); }
+  .seg-hint { font-size:11px; color:var(--gray-500); margin-top:7px; line-height:1.6; }
 
-  /* BUTTONS */
+  /* ── UPLOAD ── */
+  .up-sec-title {
+    font-size:11px; font-weight:800; letter-spacing:.5px;
+    color:var(--gray-500); text-transform:uppercase; margin:18px 0 10px;
+  }
+  .up-sec-title.req { color:var(--accent); }
+  .uz {
+    border:1.5px dashed var(--gray-300); border-radius:var(--radius-sm);
+    padding:22px 16px; text-align:center; cursor:pointer;
+    transition:.2s; background:var(--gray-50);
+  }
+  .uz:hover { border-color:var(--black); background:var(--white); }
+  .uz.ok { border:1.5px solid var(--green); background:var(--green-bg); }
+  .uz .ic { font-size:24px; margin-bottom:6px; }
+  .uz .tx { font-size:12px; color:var(--gray-700); line-height:1.5; }
+  .uz .tx small { color:var(--gray-500); font-size:11px; }
+  .uz .fn { font-size:12px; font-weight:800; color:var(--green); margin-top:7px; word-break:break-all; }
+
+  /* ── BUTTON ── */
   .btn {
-    padding:10px 20px; border-radius:var(--radius-sm); font-size:13px;
-    font-weight:700; cursor:pointer; border:none; transition:.15s;
-    font-family:var(--font-sans); display:inline-flex; align-items:center; gap:6px;
+    padding:14px 24px; border-radius:12px; font-size:14px;
+    font-weight:800; cursor:pointer; border:none; transition:.15s;
+    font-family:var(--font); display:inline-flex; align-items:center; gap:7px;
   }
-  .btn-primary { background:var(--accent); color:white; }
-  .btn-primary:hover { background:#9a3412; }
-  .btn-primary:disabled { background:#d6d3d1; cursor:not-allowed; }
-  .btn-secondary { background:var(--surface2); color:var(--text); border:1px solid var(--border); }
-  .btn-secondary:hover { background:var(--border); }
-  .btn-green { background:#166534; color:white; }
-  .btn-green:hover { background:#14532d; }
-  .btn-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-
-  /* PROGRESS */
-  .progress-wrap { margin:14px 0; }
-  .progress-bar-bg { background:var(--surface2); border-radius:20px; height:8px; overflow:hidden; }
-  .progress-bar-fill { height:100%; background:var(--accent); border-radius:20px; transition:width .3s; }
-  .progress-text { font-size:11px; color:var(--text-muted); margin-top:5px; }
-
-  /* STATUS */
-  .status {
-    padding:10px 14px; border-radius:var(--radius-sm);
-    font-size:12px; margin-top:10px; display:none;
+  .btn-run {
+    background:var(--accent); color:var(--white); width:100%;
+    justify-content:center; font-size:15px; padding:16px;
   }
-  .status.info { background:var(--blue-bg); color:var(--blue); border:1px solid var(--blue-border); display:block; }
-  .status.success { background:var(--green-bg); color:var(--green); border:1px solid var(--green-border); display:block; }
-  .status.error { background:var(--red-bg); color:#991b1b; border:1px solid var(--red-border); display:block; }
-  .status.warning { background:var(--yellow-bg); color:#92400e; border:1px solid var(--yellow-border); display:block; }
+  .btn-run:hover { background:#DE3D08; }
+  .btn-run:disabled { background:var(--gray-300); cursor:not-allowed; }
+  .btn-dl { background:var(--black); color:var(--white); }
+  .btn-dl:hover { background:#333; }
+  .btn-ghost { background:var(--gray-100); color:var(--gray-700); border:1px solid var(--gray-200); }
+  .btn-ghost:hover { background:var(--gray-200); }
+  .btn-sm { padding:8px 14px; font-size:12px; border-radius:9px; }
 
-  /* KPI ROW */
-  .kpi-row { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:16px; }
-  @media(max-width:600px) { .kpi-row { grid-template-columns:repeat(2,1fr); } }
-  .kpi {
-    background:var(--surface); border:1px solid var(--border);
-    border-radius:var(--radius); padding:14px 16px;
-    border-top:3px solid var(--accent);
-  }
-  .kpi-label { font-size:10px; color:var(--text-muted); font-weight:700; text-transform:uppercase; letter-spacing:.4px; }
-  .kpi-val { font-size:24px; font-weight:800; color:var(--text); margin:4px 0 2px; }
-  .kpi-sub { font-size:11px; color:var(--text-muted); }
+  /* ── STATUS ── */
+  .st { padding:12px 15px; border-radius:var(--radius-sm); font-size:12px; margin-top:12px; display:none; line-height:1.6; }
+  .st.show { display:block; }
+  .st.ok  { background:var(--green-bg); color:var(--green); }
+  .st.err { background:var(--red-bg); color:var(--red); }
+  .st.info{ background:var(--gray-100); color:var(--gray-700); }
 
-  /* TABLE */
-  .table-wrap { overflow-x:auto; border-radius:var(--radius); border:1px solid var(--border); }
-  table { width:100%; border-collapse:collapse; font-size:12px; }
-  thead th {
-    background:var(--text); color:#fafaf9;
-    padding:9px 12px; text-align:left; font-size:11px;
-    font-weight:700; white-space:nowrap;
+  .cache-bar {
+    margin-top:12px; padding:11px 15px; border-radius:var(--radius-sm);
+    background:var(--green-bg); font-size:12px; color:var(--green);
+    display:none; align-items:center; justify-content:space-between; gap:10px;
   }
-  tbody tr { border-bottom:1px solid var(--border); }
-  tbody tr:hover td { background:var(--surface2); }
-  tbody td { padding:8px 12px; color:var(--text); }
-  .badge {
-    display:inline-block; padding:2px 8px; border-radius:20px;
-    font-size:10px; font-weight:700;
+  .cache-bar.show { display:flex; }
+  .cache-bar button {
+    padding:5px 12px; font-size:11px; font-weight:700;
+    background:var(--white); border:1px solid var(--gray-200);
+    border-radius:20px; cursor:pointer; color:var(--gray-700); font-family:var(--font);
+    flex-shrink:0;
   }
-  .badge-a { background:#dcfce7; color:#166534; }
-  .badge-b { background:#dbeafe; color:#1e40af; }
-  .badge-c { background:#fef9c3; color:#854d0e; }
-  .score-bar { display:flex; align-items:center; gap:6px; }
-  .score-fill { height:6px; border-radius:3px; background:var(--accent); }
-  .score-num { font-size:11px; font-weight:700; color:var(--text-muted); min-width:20px; }
+  .cache-bar button:hover { color:var(--red); border-color:var(--red); }
 
-  /* LOG */
+  /* ── PROGRESS ── */
+  .prog { margin-top:16px; display:none; }
+  .prog.show { display:block; }
+  .prog-bg { background:var(--gray-100); border-radius:20px; height:7px; overflow:hidden; }
+  .prog-fill { height:100%; background:var(--accent); border-radius:20px; transition:width .3s; width:0%; }
+  .prog-tx { font-size:11px; color:var(--gray-500); margin-top:6px; }
+
+  /* ── LOG ── */
   .log {
-    background:#1c1917; color:#a8a29e; border-radius:var(--radius);
-    padding:14px 16px; font-family:var(--font-mono); font-size:11px;
-    line-height:1.8; max-height:180px; overflow-y:auto; margin-top:12px;
-    display:none;
+    background:var(--black); color:#999; border-radius:var(--radius-sm);
+    padding:14px 16px; font-family:'SF Mono',monospace; font-size:11px;
+    line-height:1.9; max-height:180px; overflow-y:auto; margin-top:12px; display:none;
   }
   .log.show { display:block; }
-  .log .ok { color:#86efac; }
-  .log .warn { color:#fde68a; }
-  .log .err { color:#fca5a5; }
+  .log .ok  { color:#5AE28B; }
+  .log .wr  { color:#FFD666; }
+  .log .er  { color:#FF7B72; }
 
-  /* SECTION DIVIDER */
-  .divider { border:none; border-top:1px solid var(--border); margin:20px 0; }
+  /* ── KPI ── */
+  .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:18px; }
+  .kpi {
+    background:var(--gray-50); border-radius:var(--radius-sm); padding:15px 16px;
+    border-top:3px solid var(--gray-300);
+  }
+  .kpi.a1 { border-color:var(--black); }
+  .kpi.a2 { border-color:var(--green); }
+  .kpi.a3 { border-color:var(--accent); }
+  .kpi.a4 { border-color:var(--gray-500); }
+  .kpi.a5 { border-color:var(--red); }
+  .kpi .l { font-size:10px; font-weight:800; color:var(--gray-500); letter-spacing:.4px; }
+  .kpi .v { font-size:22px; font-weight:800; margin:3px 0 1px; }
+  .kpi .s { font-size:10px; color:var(--gray-500); }
 
-  /* HIDDEN */
+  /* ── TABLE ── */
+  .twrap { overflow-x:auto; border-radius:var(--radius-sm); border:1px solid var(--gray-200); }
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  thead th {
+    background:var(--black); color:var(--white); padding:10px 12px;
+    text-align:left; font-size:11px; font-weight:700; white-space:nowrap;
+  }
+  tbody tr { border-bottom:1px solid var(--gray-100); }
+  tbody tr:hover td { background:var(--gray-50); }
+  tbody td { padding:9px 12px; }
+  .bdg { display:inline-block; padding:3px 9px; border-radius:20px; font-size:10px; font-weight:800; }
+  .bdg-a { background:var(--green-bg); color:var(--green); }
+  .bdg-b { background:#EEF2FF; color:#4353C7; }
+  .bdg-new { background:var(--green-bg); color:var(--green); font-size:10px; padding:2px 7px; border-radius:9px; }
+  .bdg-old { background:var(--gray-100); color:var(--gray-500); font-size:10px; padding:2px 7px; border-radius:9px; }
+  .sbar { display:flex; align-items:center; gap:6px; }
+  .sfill { height:5px; border-radius:3px; background:var(--accent); }
+  .snum { font-size:11px; font-weight:800; color:var(--gray-700); min-width:18px; }
+
+  /* ── FILTER ROW ── */
+  .frow { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px; align-items:flex-end; }
+  .frow > div { flex:1; min-width:110px; }
+  .frow select {
+    width:100%; padding:10px 12px;
+    border:1.5px solid var(--gray-200); border-radius:var(--radius-sm);
+    font-size:13px; font-family:var(--font); background:var(--white); outline:none;
+  }
+  .frow .btns { display:flex; gap:8px; flex:none; }
+
+  .conv-note { font-size:11px; color:var(--gray-500); margin-top:10px; line-height:1.7; }
   .hidden { display:none !important; }
-
-  /* SAVED BADGE */
-  .saved-badge {
-    display:inline-flex; align-items:center; gap:5px;
-    padding:4px 10px; border-radius:20px;
-    background:var(--green-bg); border:1px solid var(--green-border);
-    color:var(--green); font-size:11px; font-weight:700; margin-top:8px;
-  }
-  .cache-info {
-    margin-top:10px; padding:10px 14px; border-radius:var(--radius-sm);
-    background:var(--green-bg); border:1px solid var(--green-border);
-    font-size:11px; color:var(--green); display:none;
-  }
-  .cache-info.show { display:flex; align-items:center; justify-content:space-between; gap:10px; }
-  .btn-clear { padding:4px 10px; font-size:11px; background:white; border:1px solid var(--green-border); color:var(--green); border-radius:20px; cursor:pointer; font-weight:700; }
-  .btn-clear:hover { background:var(--red-bg); border-color:var(--red-border); color:#991b1b; }
-
-  /* FILTER ROW */
-  .filter-row { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px; align-items:flex-end; }
-  .filter-row > div { flex:1; min-width:120px; }
-
-  /* TOOLTIP */
-  .tip {
-    display:inline-block; width:16px; height:16px; background:var(--surface2);
-    border:1px solid var(--border); border-radius:50%; text-align:center;
-    line-height:15px; font-size:10px; color:var(--text-muted); cursor:help;
-    margin-left:4px;
-  }
+  .tcount { margin-top:10px; font-size:11px; color:var(--gray-500); }
 </style>
 </head>
 <body>
 
 <header>
-  <div>
-    <div class="logo" style="display:flex; align-items:baseline; gap:10px;">
-        뷰플샵 <span>타겟 선별기</span>
-        <span style="font-size:11px; font-weight:400; color:#a78bfa; background:rgba(167,139,250,.15); padding:2px 8px; border-radius:20px; letter-spacing:.3px;">v3.0</span>
-      </div>
-    <div class="subtitle">미용업 인허가 파일 업로드 → 발송 대상 자동 선별</div>
-  </div>
-  <div class="step-bar">
-    <div class="step-dot active" id="s1">1</div>
-    <div class="step-line"></div>
-    <div class="step-dot" id="s2">2</div>
-    <div class="step-line"></div>
-    <div class="step-dot" id="s3">3</div>
-    <div class="step-line"></div>
-    <div class="step-dot" id="s4">4</div>
+  <div class="logo">뷰플샵 <em>타겟 선별기</em> <span class="ver">v3.0</span></div>
+  <div class="steps">
+    <div class="sdot on" id="s1">1</div><div class="sline"></div>
+    <div class="sdot" id="s2">2</div><div class="sline"></div>
+    <div class="sdot" id="s3">3</div><div class="sline"></div>
+    <div class="sdot" id="s4">4</div>
   </div>
 </header>
 
 <main>
 
-  <!-- STEP 1: API 키 -->
-  <div class="card" id="card1">
-    <div class="card-title"><div class="num">1</div> API 키 설정</div>
-    <div class="input-row">
+  <!-- STEP 1 -->
+  <div class="card">
+    <div class="ct"><div class="n">1</div> 기준 설정</div>
+    <div class="row2">
       <div>
-        <label>공공데이터포털 API 키 <span class="tip" title="data.go.kr → 마이페이지 → 인증키">?</span></label>
-        <input type="password" id="apiKey" placeholder="발급받은 인증키 입력">
+        <label class="lbl">기준 연월 (인허가일자 필터)</label>
+        <input type="text" id="targetMonth" placeholder="202608" maxlength="6">
       </div>
       <div>
-        <label>기준 연월 (인허가일자 필터)</label>
-        <input type="text" id="targetMonth" placeholder="예: 202506" maxlength="6">
+        <label class="lbl">공공데이터 API 키 (선택 — 미래 확장용)</label>
+        <input type="password" id="apiKey" placeholder="파일 업로드 방식은 불필요">
       </div>
-    </div>
-    <div style="margin-top:10px;">
-      <label>
-        <input type="checkbox" id="saveKey" style="width:auto;margin-right:4px;">
-        <span style="font-size:12px; color:var(--text-muted);">이 브라우저에 API 키 저장 (팀원 개인 설정용)</span>
-      </label>
-    </div>
-    <div class="status info" id="apiStatus">
-      API 키는 브라우저에서 직접 data.go.kr을 호출하는 데만 사용됩니다. 서버에 전송되지 않습니다.
     </div>
   </div>
 
-  <!-- STEP 2: 데이터 업로드 -->
-  <div class="card" id="card2">
-    <div class="card-title"><div class="num">2</div> 데이터 업로드</div>
+  <!-- STEP 2 -->
+  <div class="card">
+    <div class="ct"><div class="n">2</div> 데이터 업로드</div>
 
-    <!-- 인허가 파일 (필수) -->
-    <div style="margin-bottom:14px;">
-      <div style="font-size:11px; font-weight:700; color:var(--accent); text-transform:uppercase; letter-spacing:.4px; margin-bottom:8px;">
-        📋 인허가 데이터 <span style="color:var(--accent); font-size:10px;">(필수 — API 대체)</span>
-      </div>
-      <div class="upload-zone" id="salonZone" onclick="document.getElementById('salonFile').click()">
-        <div class="icon">🏛</div>
-        <div class="text">미용업 인허가 엑셀<br>
-          <small>localdata.go.kr에서 매월 1일 다운로드<br>
-          05_18_01_P-영업_일반미용업_YYYYMM.xlsx</small>
-        </div>
-        <div class="file-name" id="salonFileName"></div>
-      </div>
-      <input type="file" id="salonFile" accept=".xlsx,.xls,.csv" onchange="handleSalonFile(this)">
+    <div class="up-sec-title req">📋 인허가 데이터 — 필수</div>
+    <div class="uz" id="salonZone" onclick="document.getElementById('salonFile').click()">
+      <div class="ic">🏛</div>
+      <div class="tx">미용업 인허가 파일 (xlsx / csv)<br>
+        <small>localdata.go.kr 매월 1일 다운로드</small></div>
+      <div class="fn" id="salonFN"></div>
     </div>
+    <input type="file" id="salonFile" accept=".xlsx,.xls,.csv" onchange="handleSalonFile(this)">
 
-    <hr style="border:none; border-top:1px solid var(--border); margin:16px 0;">
-
-    <!-- 회원 + 발송이력 (제외 처리용) -->
-    <div style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.4px; margin-bottom:8px;">
-      🚫 제외 처리용 (기가입·발송이력)
-    </div>
-    <div class="input-row">
+    <div class="up-sec-title">🚫 제외 처리용 — 기가입 · 발송이력</div>
+    <div class="row2">
       <div>
-        <div class="upload-zone" id="memberZone" onclick="document.getElementById('memberFile').click()">
-          <div class="icon">📊</div>
-          <div class="text">뷰플샵 회원 엑셀<br><small>member_excel_YYYY-MM-DD.xlsx</small></div>
-          <div class="file-name" id="memberFileName"></div>
+        <div class="uz" id="memberZone" onclick="document.getElementById('memberFile').click()">
+          <div class="ic">📊</div>
+          <div class="tx">회원 엑셀<br><small>member_excel_*.xlsx</small></div>
+          <div class="fn" id="memberFN"></div>
         </div>
         <input type="file" id="memberFile" accept=".xlsx,.xls" onchange="handleMemberFile(this)">
       </div>
       <div>
-        <div class="upload-zone" id="sentZone" onclick="document.getElementById('sentFile').click()">
-          <div class="icon">📬</div>
-          <div class="text">과거 발송 이력 엑셀<br><small>우편고객관리_YYYYMMDD.xlsx</small></div>
-          <div class="file-name" id="sentFileName"></div>
+        <div class="uz" id="sentZone" onclick="document.getElementById('sentFile').click()">
+          <div class="ic">📬</div>
+          <div class="tx">발송 이력 엑셀<br><small>우편고객관리_*.xlsx</small></div>
+          <div class="fn" id="sentFN"></div>
         </div>
         <input type="file" id="sentFile" accept=".xlsx,.xls" multiple onchange="handleSentFile(this)">
       </div>
     </div>
-    <div class="status" id="uploadStatus"></div>
-    <div class="cache-info" id="cacheInfo">
-      <span id="cacheText"></span>
-      <button class="btn-clear" onclick="clearCache()">🗑 저장 데이터 초기화</button>
+
+    <div class="st" id="upStatus"></div>
+    <div class="cache-bar" id="cacheBar">
+      <span id="cacheTx"></span>
+      <button onclick="clearCache()">초기화</button>
     </div>
   </div>
 
-  <!-- STEP 3: 조회 설정 + 실행 -->
-  <div class="card" id="card3">
-    <div class="card-title"><div class="num">3</div> 조회 설정 및 실행</div>
-    <div class="input-row" style="margin-bottom:14px;">
-      <div>
-        <label>업태 구분</label>
-        <select id="bizType">
-          <option value="일반미용업">일반미용업 (헤어만)</option>
-          <option value="종합미용업">종합미용업 포함</option>
-        </select>
-      </div>
-      <div>
-        <label>발송 그룹 분할 기준</label>
-        <select id="groupBy">
-          <option value="age3" selected>영업연수 (A: 0~2년 신규 / B: 2년+ 기존)</option>
-          <option value="region">지역 (A: 지방중소시 / B: 수도권)</option>
-          <option value="score">점수 상위 (A/B 균등 분할)</option>
-        </select>
+  <!-- STEP 3 -->
+  <div class="card">
+    <div class="ct"><div class="n">3</div> 선별 조건</div>
+
+    <div class="seg-group">
+      <label class="lbl">업태</label>
+      <div class="seg" id="segBiz">
+        <button class="on" data-v="일반미용업" onclick="segSel(this)">일반미용업 (헤어)</button>
+        <button data-v="전체" onclick="segSel(this)">전체 미용업</button>
       </div>
     </div>
-    <div class="input-row" style="margin-bottom:16px;">
-      <div>
-        <label>우선순위 정렬 기준 <span class="tip" title="전환율 높은 지역순: 대전→광주→울산 등 구매전환율 높은 지역 우선&#10;최신 인허가순: 신규 오픈 매장 우선 (0~2년차)">?</span></label>
-        <select id="fetchOrder">
-          <option value="region_first" selected>전환율 높은 지역순 (권장 — 대전→광주→울산…)</option>
-          <option value="latest_first">최신 인허가순 (신규 오픈 우선)</option>
-        </select>
-      </div>
-      <div>
-        <label style="color:var(--text-muted); font-size:11px; margin-top:6px; display:block;">
-          💡 인허가 파일을 업로드하면 API 없이 즉시 처리됩니다<br>
-          💡 매월 1일 localdata.go.kr에서 신규 파일 다운로드 권장
-        </label>
+
+    <div class="seg-group">
+      <label class="lbl">발송 그룹 분할</label>
+      <div class="seg" id="segGroup">
+        <button class="on" data-v="age" onclick="segSel(this)">영업연수<br><small style="font-weight:400;">신규 0~2년 / 기존 2년+</small></button>
+        <button data-v="region" onclick="segSel(this)">지역<br><small style="font-weight:400;">지방중소시 / 수도권</small></button>
+        <button data-v="score" onclick="segSel(this)">점수 균등<br><small style="font-weight:400;">A/B 반반</small></button>
       </div>
     </div>
-    <div class="input-row" style="margin-bottom:16px;">
-      <div>
-        <label>총 발송 목표 수</label>
-        <select id="topN">
-          <option value="1000">1,000매</option>
-          <option value="2000" selected>2,000매 (권장 — A/B 각 1,000)</option>
-          <option value="3000">3,000매</option>
-        </select>
+
+    <div class="seg-group">
+      <label class="lbl">우선순위 정렬</label>
+      <div class="seg" id="segSort">
+        <button class="on" data-v="region" onclick="segSel(this)">전환율 높은 지역순</button>
+        <button data-v="latest" onclick="segSel(this)">최신 인허가순</button>
       </div>
-      <div>
-        <label>최소 스코어 필터</label>
-        <select id="minScore">
-          <option value="0">제한 없음</option>
-          <option value="12">12점 이상 (지역 기본)</option>
-          <option value="14" selected>14점 이상 (권장)</option>
-          <option value="17">17점 이상 (신규 지역 우수)</option>
-          <option value="19">19점 이상 (신규+고전환 지역)</option>
-        </select>
+      <div class="seg-hint">지역순: 대전→광주→울산… 순 · 최신순: 신규 오픈 매장 우선</div>
+    </div>
+
+    <div class="seg-group">
+      <label class="lbl">발송 목표</label>
+      <div class="seg" id="segTopN">
+        <button data-v="1000" onclick="segSel(this)">1,000매</button>
+        <button class="on" data-v="2000" onclick="segSel(this)">2,000매</button>
+        <button data-v="3000" onclick="segSel(this)">3,000매</button>
       </div>
     </div>
-    <div class="btn-row">
-      <button class="btn btn-primary" onclick="runFetch()" id="runBtn">
-        ▶ 필터링 및 선별 시작
-      </button>
-      <span id="runHint" style="font-size:11px; color:var(--text-muted);">
-        인허가 파일 → 필터링 → 스코어링 → 상위 선별
-      </span>
+
+    <div class="seg-group">
+      <label class="lbl">최소 점수 (최대 20점)</label>
+      <div class="seg" id="segScore">
+        <button class="on" data-v="0" onclick="segSel(this)">제한 없음</button>
+        <button data-v="13" onclick="segSel(this)">13점+</button>
+        <button data-v="15" onclick="segSel(this)">15점+</button>
+        <button data-v="17" onclick="segSel(this)">17점+</button>
+      </div>
+      <div class="seg-hint">지역 최대 10점 + 신규(0~2년) 10점 · 프랜차이즈(동일상호 5개+)·업종키워드는 자동 제외</div>
     </div>
-    <div class="progress-wrap hidden" id="progressWrap">
-      <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill" style="width:0%"></div></div>
-      <div class="progress-text" id="progressText">준비 중...</div>
+
+    <button class="btn btn-run" id="runBtn" onclick="run()">▶ 필터링 및 선별 시작</button>
+
+    <div class="prog" id="prog">
+      <div class="prog-bg"><div class="prog-fill" id="progFill"></div></div>
+      <div class="prog-tx" id="progTx"></div>
     </div>
-    <div class="log" id="fetchLog"></div>
+    <div class="log" id="logBox"></div>
   </div>
 
-  <!-- STEP 4a: 전환율 분석 패널 -->
-  <div class="card hidden" id="card4a">
-    <div class="card-title"><div class="num" style="background:#1e40af;">📊</div> 인허가 미용업 전환율 분석</div>
-    <div id="convKpiRow" class="kpi-row" style="grid-template-columns:repeat(5,1fr);"></div>
-    <div style="overflow-x:auto; margin-top:8px;">
-      <table style="width:100%; border-collapse:collapse; font-size:12px;" id="convTable">
-        <thead>
-          <tr>
-            <th style="background:#1e40af; color:white; padding:8px 12px;">구분</th>
-            <th style="background:#1e40af; color:white; padding:8px 12px;">전체 영업중</th>
-            <th style="background:#1e40af; color:white; padding:8px 12px;">가입 매장 (추정)</th>
-            <th style="background:#1e40af; color:white; padding:8px 12px;">가입 전환율</th>
-            <th style="background:#1e40af; color:white; padding:8px 12px;">구매 전환율</th>
-            <th style="background:#1e40af; color:white; padding:8px 12px;">폐업 추정</th>
-            <th style="background:#1e40af; color:white; padding:8px 12px;">폐업률</th>
-          </tr>
-        </thead>
+  <!-- 전환율 분석 -->
+  <div class="card hidden" id="convCard">
+    <div class="ct"><div class="n" style="background:var(--green);">📊</div> 인허가 미용업 전환율 분석</div>
+    <div class="kpis" id="convKpis"></div>
+    <div class="twrap">
+      <table>
+        <thead><tr>
+          <th>구분</th><th style="text-align:right;">전체 영업중</th>
+          <th style="text-align:right;">가입 매장(추정)</th><th style="text-align:right;">가입 전환율</th>
+          <th style="text-align:right;">폐업 추정</th><th style="text-align:right;">폐업률</th>
+        </tr></thead>
         <tbody id="convBody"></tbody>
       </table>
     </div>
-    <div style="margin-top:8px; font-size:11px; color:var(--text-muted); line-height:1.7;">
-      ※ 가입 매장: 회원 데이터 상호명과 인허가 사업장명 매칭 기준 (퍼지 매칭)<br>
-      ※ 폐업 추정: 회원 중 현재 인허가 영업중 목록에 없는 매장 (상호명 기준)
+    <div class="conv-note">
+      ※ 가입 매장: 회원 상호명 ↔ 인허가 사업장명 매칭 · 폐업 추정: 회원 중 영업중 목록에 없는 매장
     </div>
   </div>
 
-  <!-- STEP 4: 결과 -->
-  <div class="card hidden" id="card4">
-    <div class="card-title"><div class="num">4</div> 선별 결과</div>
+  <!-- 선별 결과 -->
+  <div class="card hidden" id="resultCard">
+    <div class="ct"><div class="n" style="background:var(--accent);">4</div> 선별 결과</div>
+    <div class="kpis" id="resultKpis"></div>
 
-    <div class="kpi-row" id="kpiRow"></div>
-
-    <div class="filter-row">
+    <div class="frow">
       <div>
-        <label>그룹 필터</label>
-        <select id="filterGroup" onchange="renderTable()">
+        <label class="lbl">그룹</label>
+        <select id="fGroup" onchange="renderTable()">
           <option value="">전체</option>
-          <option value="A">A그룹만</option>
-          <option value="B">B그룹만</option>
-          <option value="C">C그룹만</option>
+          <option value="A">A그룹</option>
+          <option value="B">B그룹</option>
         </select>
       </div>
       <div>
-        <label>지역 필터</label>
-        <select id="filterRegion" onchange="renderTable()">
-          <option value="">전체</option>
-        </select>
+        <label class="lbl">지역</label>
+        <select id="fRegion" onchange="renderTable()"><option value="">전체</option></select>
       </div>
       <div>
-        <label>정렬</label>
-        <select id="sortBy" onchange="renderTable()">
+        <label class="lbl">정렬</label>
+        <select id="fSort" onchange="renderTable()">
           <option value="score">점수 높은 순</option>
-          <option value="age_new">영업연수 낮은 순 (신규)</option>
-          <option value="age_old">영업연수 높은 순</option>
+          <option value="new">인허가 최신순</option>
+          <option value="old">인허가 오래된순</option>
         </select>
       </div>
-      <div style="display:flex; gap:8px; align-items:flex-end;">
-        <button class="btn btn-green" onclick="downloadExcel()">⬇ 엑셀 다운로드</button>
-        <button class="btn btn-secondary" onclick="copyCSV()">📋 CSV 복사</button>
+      <div class="btns">
+        <button class="btn btn-dl btn-sm" onclick="downloadExcel()">⬇ 엑셀</button>
+        <button class="btn btn-ghost btn-sm" onclick="copyCSV()">CSV 복사</button>
       </div>
     </div>
 
-    <div class="table-wrap">
+    <div class="twrap">
       <table>
-        <thead>
-          <tr>
-            <th>순위</th><th>그룹</th><th>사업장명</th><th>주소(시/구)</th>
-            <th>우편번호</th><th>영업연수</th><th>인허가일자</th><th>점수</th>
-          </tr>
-        </thead>
+        <thead><tr>
+          <th>#</th><th>그룹</th><th>사업장명</th><th>주소</th>
+          <th>우편번호</th><th>연수</th><th>인허가일</th><th>점수</th>
+        </tr></thead>
         <tbody id="resultBody"></tbody>
       </table>
     </div>
-    <div style="margin-top:10px; font-size:11px; color:var(--text-muted);" id="tableCount"></div>
+    <div class="tcount" id="tCount"></div>
   </div>
 
 </main>
 
 <script>
-// ── 상수: 스코어링 가중치 (뷰플샵 데이터 검증 기반) ──────────────────
-// ── 점수 체계 (데이터 기반, v3.0) ──────────────────────────────
-// 지역: 뷰플샵 구매전환율 기반 (최대 10점)
+'use strict';
+
+/* ═══════════════════ 상수 ═══════════════════ */
 const REGION_SCORE = {
   '대전':10,'광주':9,'울산':9,'경기':8,'대구':8,
   '인천':8,'서울':7,'부산':7,'강원':7,'경남':7,
   '경북':7,'전북':7,'전남':6,'충남':6,'충북':5,'제주':5,'세종':5
 };
-// 영업연수: 0~2년(신규)=10점, 2년+=5점 (단순 2분류)
-// 의자수/면적: 데이터 미검증으로 제거
-// 프랜차이즈: 키워드+의자수10석+ 기준 제외
-
-// 업종 제외 키워드 (일반미용업이어도 실제 헤어 아닌 경우)
-const EXCLUDE_KEYWORDS = [
-  // 두피
+const REGION_ORDER = ['대전','광주','울산','경기','대구','인천','서울','부산','강원','경남','경북','전북','전남','충남','충북','제주','세종'];
+const METRO = ['서울','경기','인천'];
+const EXCLUDE_KW = [
   '두피','헤드',
-  // 네일
   '네일','발관리','발마사지','페디',
-  // 메이크업
   '눈썹','브로우','brow','메이크업','makeup',
-  // 피부
   '피부','스킨',
-  // 왁싱
   '왁싱','waxing',
-  // 힐링/마사지
   '에스테틱','약손','마사지','수기','스파','헬스','아로마',
-  // 맨즈/바버
   '맨즈','바버','barber',
 ];
 
-// 프랜차이즈: 동일 상호명 5개 이상 = 런타임에 계산
-// (handleSalonFile에서 미리 집계)
-let franchiseNameSet = new Set();
+/* ═══════════════════ 전역 상태 ═══════════════════ */
+let salonData = [];        // 인허가 (표준키)
+let memberData = [];       // 회원 원본
+let enrolledNames = new Set();
+let sentNames = new Set();
+let franchiseSet = new Set();
+let resultData = [];
 
-// ── 저장된 키 + 캐시 불러오기 ──────────────────────────────────────
-window.addEventListener('load', () => {
-  // API 키
-  const savedKey = localStorage.getItem('beaupl_api_key');
-  if (savedKey) {
-    document.getElementById('apiKey').value = savedKey;
-    document.getElementById('saveKey').checked = true;
-  }
-  // 기준 연월
-  const ym = new Date();
-  document.getElementById('targetMonth').value =
-    String(ym.getFullYear()) + String(ym.getMonth()+1).padStart(2,'0');
+/* ═══════════════════ 유틸 ═══════════════════ */
+const $ = id => document.getElementById(id);
 
-  // 캐시 복원
-  loadCachedData();
-});
-
-function loadCachedData() {
-  let msgs = [];
-
-  // 인허가 캐시 복원
-  const cachedSalon = localStorage.getItem('beaupl_salon');
-  if (cachedSalon) {
-    try {
-      const parsed = JSON.parse(cachedSalon);
-      // 경량 캐시에서 salonData 복원
-      salonData = parsed.rows.map(r => ({
-        bplcNm:          r.n || '',
-        rdnWhlAddr:      r.a || '',
-        rdnPostNo:       r.z || '',
-        apvPermYmd:      r.d || '',
-        seatingCapacity: r.c || 0,
-        uptaeNm:         r.t || '',
-        trdStateNm:      r.s || '',
-        trdStateGbn:     r.g || '',
-        siteArea:        r.f || 0,
-      }));
-      // 캐시 복원 후 프랜차이즈 집계 재계산
-      const nc = {};
-      salonData.forEach(r => { const n = normName(r.bplcNm||''); if(n) nc[n]=(nc[n]||0)+1; });
-      franchiseNameSet = new Set(Object.keys(nc).filter(n => nc[n] >= 5));
-      document.getElementById('salonFileName').textContent =
-        `✅ ${parsed.filename} (${parsed.count.toLocaleString()}개) — 저장됨`;
-      document.getElementById('salonZone').classList.add('has-file');
-      msgs.push(`인허가 ${parsed.count.toLocaleString()}개`);
-    } catch(e) { localStorage.removeItem('beaupl_salon'); }
-  }
-
-  const cachedMembers = localStorage.getItem('beaupl_members');
-  if (cachedMembers) {
-    try {
-      const parsed = JSON.parse(cachedMembers);
-      enrolledNames = new Set(parsed.names);
-      const savedAt = parsed.savedAt || '';
-      document.getElementById('memberFileName').textContent =
-        `✅ ${parsed.filename} (${enrolledNames.size.toLocaleString()}명) — 저장됨`;
-      document.getElementById('memberZone').classList.add('has-file');
-      msgs.push(`회원 ${enrolledNames.size.toLocaleString()}개`);
-    } catch(e) { localStorage.removeItem('beaupl_members'); }
-  }
-
-  const cachedSent = localStorage.getItem('beaupl_sent');
-  if (cachedSent) {
-    try {
-      const parsed = JSON.parse(cachedSent);
-      sentNames = new Set(parsed.names);
-      document.getElementById('sentFileName').textContent =
-        `✅ ${parsed.fileCount}개 파일 (${sentNames.size.toLocaleString()}개) — 저장됨`;
-      document.getElementById('sentZone').classList.add('has-file');
-      msgs.push(`발송이력 ${sentNames.size.toLocaleString()}개`);
-    } catch(e) { localStorage.removeItem('beaupl_sent'); }
-  }
-
-  if (msgs.length) {
-    const info = document.getElementById('cacheInfo');
-    document.getElementById('cacheText').textContent =
-      `💾 이전에 저장된 데이터를 불러왔어요 — ${msgs.join(' / ')} (새 파일 업로드 시 덮어씌워집니다)`;
-    info.classList.add('show');
-  }
-}
-
-function clearCache() {
-  if (!confirm('저장된 회원·발송이력 데이터를 삭제할까요?')) return;
-  localStorage.removeItem('beaupl_salon');
-  localStorage.removeItem('beaupl_members');
-  localStorage.removeItem('beaupl_sent');
-  enrolledNames = new Set();
-  sentNames     = new Set();
-  document.getElementById('salonFileName').textContent = '';
-  document.getElementById('memberFileName').textContent = '';
-  document.getElementById('sentFileName').textContent = '';
-  document.getElementById('salonZone').classList.remove('has-file');
-  document.getElementById('memberZone').classList.remove('has-file');
-  document.getElementById('sentZone').classList.remove('has-file');
-  salonData = [];
-  document.getElementById('cacheInfo').classList.remove('show');
-  showStatus('uploadStatus', '저장 데이터가 초기화됐어요. 파일을 다시 업로드해주세요.', 'warning');
-}
-
-// ── 정규화 ──────────────────────────────────────────────────────────
 function normName(n) {
   if (!n) return '';
-  return n.replace(/\s+/g,'').toLowerCase()
+  return String(n).replace(/\s+/g,'').toLowerCase()
     .replace(/(미용원|미용실|헤어샵|헤어살롱|살롱|뷰티|beauty|hair|shop|샵|헤어$)/g,'');
 }
 
-// ── 회원 엑셀 파싱 ──────────────────────────────────────────────────
-let enrolledNames = new Set();
-let sentNames     = new Set();
-let memberData    = [];  // 전환율 분석용
-let allApiItems   = [];  // 수집된 인허가 데이터
-let salonData     = [];  // 업로드된 인허가 파일 데이터
+function addrShort(addr) {
+  if (!addr) return '';
+  const m = String(addr).match(/^(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주)[^\s]*\s+(\S+?[시군구])/);
+  return m ? m[1] + ' ' + m[2] : String(addr).slice(0, 12);
+}
 
-// ── 인허가 파일 파싱 ──────────────────────────────────────────────
+function extractRegion(addr) {
+  if (!addr) return '';
+  const s = String(addr);
+  for (const r of REGION_ORDER) if (s.startsWith(r) || s.includes(r)) return r;
+  return '';
+}
+
+function fmtDate(ymd) {
+  if (!ymd || ymd.length < 8) return '-';
+  return ymd.slice(0,4) + '.' + ymd.slice(4,6) + '.' + ymd.slice(6,8);
+}
+
+function showSt(msg, type) {
+  const el = $('upStatus');
+  el.className = 'st show ' + type;
+  el.textContent = msg;
+}
+
+function log(msg, cls) {
+  const el = $('logBox');
+  el.classList.add('show');
+  el.innerHTML += `<div class="${cls||''}">${msg}</div>`;
+  el.scrollTop = el.scrollHeight;
+}
+
+function setProg(pct, tx) {
+  $('prog').classList.add('show');
+  $('progFill').style.width = pct + '%';
+  $('progTx').textContent = tx;
+}
+
+function segSel(btn) {
+  btn.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+}
+function segVal(id) {
+  const on = $(id).querySelector('button.on');
+  return on ? on.dataset.v : '';
+}
+
+/* ═══════════════════ CSV 파서 (RFC4180, 대용량 안전) ═══════════════════ */
+function parseCSV(text) {
+  const rows = [];
+  let row = [], field = '', inQ = false;
+  const len = text.length;
+  for (let i = 0; i < len; i++) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"') {
+        if (text[i+1] === '"') { field += '"'; i++; }
+        else inQ = false;
+      } else field += c;
+    } else {
+      if (c === '"') inQ = true;
+      else if (c === ',') { row.push(field); field = ''; }
+      else if (c === '\n') { row.push(field); if (row.length > 1 || row[0]) rows.push(row); row = []; field = ''; }
+      else if (c !== '\r') field += c;
+    }
+  }
+  if (field !== '' || row.length) { row.push(field); rows.push(row); }
+  return rows;
+}
+
+function decodeText(buf) {
+  let text = new TextDecoder('utf-8', {fatal:false}).decode(buf);
+  const sample = text.slice(0, 3000);
+  const broken = (sample.match(/\uFFFD/g) || []).length;
+  if (broken > sample.length * 0.005) {
+    text = new TextDecoder('euc-kr').decode(buf);
+  }
+  return text.replace(/^\uFEFF/, '');
+}
+
+/* ═══════════════════ 인허가 파일 로드 ═══════════════════ */
 function handleSalonFile(input) {
   const file = input.files[0]; if (!file) return;
   const ext = file.name.split('.').pop().toLowerCase();
-  showStatus('uploadStatus', '인허가 파일 분석 중...', 'info');
+  showSt('인허가 파일 분석 중... (대용량은 수십 초 걸릴 수 있어요)', 'info');
+  $('salonFN').textContent = '⏳ 분석 중...';
 
-  const reader = new FileReader();
-  reader.onload = e => {
-    try {
-      let data = [];
-
-      if (ext === 'csv') {
-        // CSV 파싱 — XLSX 라이브러리 사용 (따옴표·쉼표 포함 필드 자동 처리)
-        // 인코딩 자동 감지: UTF-8 → 깨지면 EUC-KR
-        const buf = new Uint8Array(e.target.result);
-        let text = new TextDecoder('utf-8', {fatal:false}).decode(buf);
-        // 한글 깨짐 감지 (U+FFFD 비율)
-        const sample = text.slice(0, 2000);
-        const brokenRatio = (sample.match(/\uFFFD/g) || []).length / Math.max(sample.length, 1);
-        if (brokenRatio > 0.01) {
-          text = new TextDecoder('euc-kr').decode(buf);
-          console.log('인코딩: EUC-KR로 재해석');
-        } else {
-          console.log('인코딩: UTF-8');
-        }
-        // BOM 제거
-        text = text.replace(/^\uFEFF/, '');
-        // XLSX로 CSV 파싱 (따옴표 내 쉼표 안전 처리)
-        const wbCsv = XLSX.read(text, {type:'string'});
-        data = XLSX.utils.sheet_to_json(wbCsv.Sheets[wbCsv.SheetNames[0]], {defval:''});
-        // 헤더 진단 로그
-        if (data.length) {
-          console.log('CSV 컬럼:', Object.keys(data[0]).slice(0, 15).join(', '));
-        }
-      } else {
-        // xlsx/xls 파싱
-        const wb = XLSX.read(e.target.result, {type:'binary'});
-        // 첫 번째 시트 사용
-        data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {defval:''});
-      }
-
-      // 컬럼 정규화: localdata 엑셀 포맷 → 내부 표준 키로 변환
-      salonData = data
-        .filter(r => {
-          const name = r['사업장명'] || r['bplcNm'] || r['upsoNm'] || '';
-          return String(name).trim().length > 0;
-        })
-        .map(r => ({
-          // 사업장명
-          bplcNm:         r['사업장명']         || r['bplcNm']        || '',
-          // 주소
-          rdnWhlAddr:     r['도로명전체주소']   || r['rdnWhlAddr']    || '',
-          sitewhlAddr:    r['소재지전체주소']   || r['sitewhlAddr']   || '',
-          // 우편번호
-          rdnPostNo:      String(r['도로명우편번호'] || r['rdnPostNo'] || '').replace(/\.0$/, ''),
-          // 업태
-          uptaeNm:        r['업태구분명']       || r['위생업태명']    || r['uptaeNm'] || '',
-          // 영업상태
-          trdStateNm:     r['영업상태명']       || r['trdStateNm']   || '',
-          trdStateGbn:    String(r['영업상태구분코드'] || r['trdStateGbn'] || ''),
-          // 인허가일자 (YYYYMMDD 형식으로 통일)
-          apvPermYmd:     String(r['인허가일자'] || r['apvPermYmd']  || '').replace(/-/g,'').slice(0,8),
-          // 의자수 (점수 계산용)
-          seatingCapacity: parseFloat(r['의자수'] || r['seatingCapacity'] || 0) || 0,
-          // 면적
-          siteArea:       parseFloat(r['소재지면적'] || r['siteArea'] || 0) || 0,
-        }));
-
-      // localStorage 캐시 (상호명+주소만 경량 저장)
+  // UI 블로킹 방지를 위해 약간 지연 후 처리
+  setTimeout(() => {
+    const reader = new FileReader();
+    reader.onload = e => {
       try {
-        const cachePayload = JSON.stringify({
-          filename: file.name,
-          savedAt: new Date().toISOString(),
-          count: salonData.length,
-          // 전체 데이터는 용량이 크므로 핵심 필드만 저장
-          rows: salonData.map(r => ({
-            n: r.bplcNm        || '',
-            a: r.rdnWhlAddr    || r.sitewhlAddr || '',
-            z: r.rdnPostNo     || '',
-            d: r.apvPermYmd    || '',
-            c: r.seatingCapacity || 0,
-            t: r.uptaeNm       || '',
-            s: r.trdStateNm    || '',
-            g: r.trdStateGbn   || '',
-            f: r.siteArea      || 0,
-          }))
-        });
-        localStorage.setItem('beaupl_salon', cachePayload);
-      } catch(e) { /* 용량 초과 시 캐시 스킵 */ }
+        let headers = [], rowsArr = [];
 
-      // 매핑 진단: 첫 항목 확인
-      if (salonData.length) {
-        const s0 = salonData[0];
-        console.log('매핑 샘플:', JSON.stringify({
-          사업장명: s0.bplcNm, 주소: (s0.rdnWhlAddr||'').slice(0,20),
-          인허가: s0.apvPermYmd, 상태: s0.trdStateGbn || s0.trdStateNm
-        }));
-        // 주소 매핑 실패 감지
-        const noAddr = salonData.slice(0,100).filter(r => !(r.rdnWhlAddr || r.sitewhlAddr)).length;
-        if (noAddr > 50) {
-          showStatus('uploadStatus',
-            `⚠️ 주소 컬럼 인식 실패 (${noAddr}/100) — 파일 컬럼명을 확인해주세요. F12 콘솔에서 'CSV 컬럼' 로그 확인`, 'warning');
+        if (ext === 'csv') {
+          const text = decodeText(new Uint8Array(e.target.result));
+          const parsed = parseCSV(text);
+          if (!parsed.length) throw new Error('CSV가 비어 있습니다');
+          headers = parsed[0].map(h => h.trim());
+          rowsArr = parsed.slice(1);
+        } else {
+          const wb = XLSX.read(e.target.result, {type:'array', dense:true});
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          const aoa = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+          if (!aoa.length) throw new Error('엑셀이 비어 있습니다');
+          headers = aoa[0].map(h => String(h).trim());
+          rowsArr = aoa.slice(1);
         }
+
+        // 컬럼 인덱스 찾기
+        const idx = {};
+        const findCol = (...names) => {
+          for (const nm of names) {
+            const i = headers.indexOf(nm);
+            if (i >= 0) return i;
+          }
+          return -1;
+        };
+        idx.name  = findCol('사업장명','업소명','상호명');
+        idx.addr1 = findCol('도로명전체주소','도로명주소');
+        idx.addr2 = findCol('소재지전체주소','소재지주소','지번주소');
+        idx.zip   = findCol('도로명우편번호','우편번호');
+        idx.uptae = findCol('업태구분명','위생업태명','업태명');
+        idx.state = findCol('영업상태구분코드','영업상태코드');
+        idx.stateNm = findCol('영업상태명');
+        idx.date  = findCol('인허가일자','허가일자');
+        idx.mgt   = findCol('관리번호');
+
+        console.log('헤더:', headers.slice(0,20).join(' | '));
+        console.log('컬럼 인덱스:', JSON.stringify(idx));
+
+        if (idx.name < 0) throw new Error('사업장명 컬럼을 찾을 수 없습니다. 헤더: ' + headers.slice(0,10).join(', '));
+        if (idx.addr1 < 0 && idx.addr2 < 0) throw new Error('주소 컬럼을 찾을 수 없습니다');
+
+        // 표준 객체로 변환
+        salonData = [];
+        for (const r of rowsArr) {
+          const name = String(r[idx.name] || '').trim();
+          if (!name) continue;
+          salonData.push({
+            name,
+            addr:  String((idx.addr1>=0 && r[idx.addr1]) || (idx.addr2>=0 && r[idx.addr2]) || '').trim(),
+            zip:   String(idx.zip>=0 ? (r[idx.zip]||'') : '').replace(/\.0$/,'').trim(),
+            uptae: String(idx.uptae>=0 ? (r[idx.uptae]||'') : '').trim(),
+            state: String(idx.state>=0 ? (r[idx.state]||'') : '').replace(/\.0$/,'').trim(),
+            stateNm: String(idx.stateNm>=0 ? (r[idx.stateNm]||'') : '').trim(),
+            date:  String(idx.date>=0 ? (r[idx.date]||'') : '').replace(/[-\.]/g,'').slice(0,8),
+            mgt:   String(idx.mgt>=0 ? (r[idx.mgt]||'') : '').trim(),
+          });
+        }
+
+        if (!salonData.length) throw new Error('유효한 데이터가 없습니다');
+
+        // 프랜차이즈 집계 (동일 상호 5개+)
+        buildFranchiseSet();
+
+        // 진단 샘플
+        const s0 = salonData[0];
+        console.log('샘플:', JSON.stringify({name:s0.name, addr:s0.addr.slice(0,25), date:s0.date, state:s0.state||s0.stateNm}));
+
+        // 캐시 저장 시도 (실패해도 무방)
+        saveSalonCache(file.name);
+
+        $('salonFN').textContent = `✅ ${file.name} (${salonData.length.toLocaleString()}개)`;
+        $('salonZone').classList.add('ok');
+        showSt(`인허가 ${salonData.length.toLocaleString()}개 로드 완료 · 프랜차이즈 상호 ${franchiseSet.size.toLocaleString()}개 감지`, 'ok');
+        markStep(2);
+
+      } catch(err) {
+        console.error(err);
+        $('salonFN').textContent = '';
+        showSt('파일 파싱 오류: ' + err.message, 'err');
       }
+    };
+    reader.onerror = () => showSt('파일 읽기 실패', 'err');
+    reader.readAsArrayBuffer(file);
+  }, 50);
+}
 
-      // 프랜차이즈: 동일 상호명 5개 이상 집계
-      const nameCount = {};
-      salonData.forEach(r => {
-        const n = normName(r.bplcNm || '');
-        if (n) nameCount[n] = (nameCount[n] || 0) + 1;
-      });
-      franchiseNameSet = new Set(Object.keys(nameCount).filter(n => nameCount[n] >= 5));
-      console.log(`프랜차이즈 상호(5개+): ${franchiseNameSet.size}개`);
+function buildFranchiseSet() {
+  const cnt = {};
+  for (const s of salonData) {
+    const n = normName(s.name);
+    if (n) cnt[n] = (cnt[n] || 0) + 1;
+  }
+  franchiseSet = new Set(Object.keys(cnt).filter(n => cnt[n] >= 5));
+}
 
-      document.getElementById('salonFileName').textContent =
-        `✅ ${file.name} (${salonData.length.toLocaleString()}개 로드)`;
-      document.getElementById('salonZone').classList.add('has-file');
-      showStatus('uploadStatus',
-        `인허가 데이터 ${salonData.length.toLocaleString()}개 로드 완료 — 필터링 준비됨`, 'success');
-
-    } catch(err) {
-      showStatus('uploadStatus', '파일 파싱 오류: ' + err.message, 'error');
-      console.error(err);
-    }
-  };
-
-  if (ext === 'csv') {
-    reader.readAsArrayBuffer(file); // EUC-KR 대응
-  } else {
-    reader.readAsBinaryString(file);
+function saveSalonCache(filename) {
+  try {
+    // 필드 압축: 배열의 배열 (JSON 키 반복 제거로 용량 절감)
+    const packed = salonData.map(s => [s.name, s.addr, s.zip, s.uptae, s.state, s.stateNm, s.date, s.mgt]);
+    const payload = JSON.stringify({ f: filename, t: Date.now(), n: salonData.length, d: packed });
+    localStorage.setItem('bp_salon', payload);
+  } catch(e) {
+    console.warn('인허가 캐시 저장 스킵 (용량 초과)');
+    localStorage.removeItem('bp_salon');
   }
 }
 
+/* ═══════════════════ 회원 파일 로드 ═══════════════════ */
 function handleMemberFile(input) {
   const file = input.files[0]; if (!file) return;
   const reader = new FileReader();
   reader.onload = e => {
     try {
-      const wb = XLSX.read(e.target.result, {type:'binary'});
-      const ws = wb.Sheets['고객RAW'] || wb.Sheets[wb.SheetNames[0]];
+      const wb = XLSX.read(e.target.result, {type:'array'});
+      const ws = wb.Sheets[wb.SheetNames[0]];
       const data = XLSX.utils.sheet_to_json(ws, {defval:''});
-      // 상호 + 상세주소(살롱명) 모두 수집 (새 포맷: 상호/상세주소 컬럼)
-      // 컬럼명 통합: member_detail / member_excel 두 포맷 모두 지원
+      // 컬럼 통합 (총 주문건수 / 총주문건수)
       data.forEach(r => {
-        // 총주문건수: 띄어쓰기 있는 버전/없는 버전 통합
-        if (r['총 주문건수'] !== undefined && r['총주문건수'] === undefined) {
-          r['총주문건수'] = r['총 주문건수'];
-        }
+        if (r['총 주문건수'] !== undefined && r['총주문건수'] === undefined) r['총주문건수'] = r['총 주문건수'];
       });
-      enrolledNames = new Set(
-        data.flatMap(r => [
-          normName(r['상호'] || r['사업장명'] || ''),
-          normName(r['상세주소'] || ''),
-        ]).filter(Boolean)
-      );
       memberData = data;
-      document.getElementById('memberFileName').textContent = `✅ ${file.name} (${enrolledNames.size.toLocaleString()}명 로드)`;
-      document.getElementById('memberZone').classList.add('has-file');
-
-      // localStorage에 상호명 목록만 저장 (개인정보 제외)
+      enrolledNames = new Set(
+        data.flatMap(r => [normName(r['상호']), normName(r['상세주소'])]).filter(Boolean)
+      );
       try {
-        localStorage.setItem('beaupl_members', JSON.stringify({
+        localStorage.setItem('bp_member', JSON.stringify({
+          f: file.name, n: data.length,
           names: [...enrolledNames],
-          filename: file.name,
-          savedAt: new Date().toISOString(),
-          count: enrolledNames.size,
+          rows: data.map(r => ({
+            상호: r['상호']||'', 주소: r['주소']||'', 살롱회원: r['살롱회원']||'',
+            총주문건수: r['총주문건수']||0, 아이디: r['아이디']||'',
+            가입경로: r['가입경로']||'', 회원태그: r['회원태그']||'',
+            사업자번호: r['사업자번호']||'', 탈퇴여부: r['탈퇴여부']||'',
+          })),
         }));
-        showStatus('uploadStatus', `회원 데이터 ${enrolledNames.size.toLocaleString()}개 로드 완료 — 브라우저에 저장됐어요 (다음 접속 시 자동 복원)`, 'success');
-      } catch(e) {
-        // 저장 용량 초과 시
-        showStatus('uploadStatus', `회원 데이터 ${enrolledNames.size.toLocaleString()}개 로드 완료 (저장 공간 부족으로 자동저장 불가)`, 'warning');
-      }
-      document.getElementById('cacheInfo').classList.remove('show');
+      } catch(e) { console.warn('회원 캐시 스킵'); }
+
+      $('memberFN').textContent = `✅ ${file.name} (${data.length.toLocaleString()}명)`;
+      $('memberZone').classList.add('ok');
+      showSt(`회원 ${data.length.toLocaleString()}명 로드 완료`, 'ok');
     } catch(err) {
-      showStatus('uploadStatus', '파일 파싱 오류: ' + err.message, 'error');
+      showSt('회원 파일 오류: ' + err.message, 'err');
     }
   };
-  reader.readAsBinaryString(file);
+  reader.readAsArrayBuffer(file);
 }
 
+/* ═══════════════════ 발송 이력 로드 ═══════════════════ */
 function handleSentFile(input) {
   const files = Array.from(input.files); if (!files.length) return;
-  sentNames = new Set(); // 새 업로드 시 초기화
+  sentNames = new Set();
   let done = 0;
   files.forEach(file => {
     const reader = new FileReader();
     reader.onload = e => {
       try {
-        const wb = XLSX.read(e.target.result, {type:'binary'});
-
-        // 우선순위: '우편목록' 시트 → comp/사업장명 컬럼 있는 시트 → 첫 번째 시트
-        let sheetName = wb.SheetNames[0];
-        if (wb.SheetNames.includes('우편목록')) {
-          sheetName = '우편목록';
-        } else {
+        const wb = XLSX.read(e.target.result, {type:'array'});
+        let sheetName = wb.SheetNames.includes('우편목록') ? '우편목록' : wb.SheetNames[0];
+        if (!wb.SheetNames.includes('우편목록')) {
           for (const sn of wb.SheetNames) {
-            const rows0 = XLSX.utils.sheet_to_json(wb.Sheets[sn], {defval:'', range:1});
-            if (rows0.length && ('comp' in rows0[0] || '사업장명' in rows0[0])) {
-              sheetName = sn; break;
-            }
+            const test = XLSX.utils.sheet_to_json(wb.Sheets[sn], {defval:'', range:0});
+            if (test.length && ('comp' in test[0] || '사업장명' in test[0])) { sheetName = sn; break; }
           }
         }
-
-        const dataTarget = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {defval:''});
-        console.log(`[${file.name}] 시트 '${sheetName}' — ${dataTarget.length}행`);
-
-        dataTarget.forEach(r => {
-          const n = normName(
-            r['사업장명'] || r['comp'] || r['상호'] || r['업소명'] || ''
-          );
+        const data = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {defval:''});
+        console.log(`[${file.name}] 시트 '${sheetName}' — ${data.length}행`);
+        data.forEach(r => {
+          const n = normName(r['사업장명'] || r['comp'] || r['상호'] || r['업소명']);
           if (n) sentNames.add(n);
         });
-      } catch(e) {}
+      } catch(e) { console.error(e); }
       done++;
       if (done === files.length) {
-        document.getElementById('sentFileName').textContent =
-          `✅ ${files.length}개 파일 (${sentNames.size.toLocaleString()}개 발송이력 — '우편목록' 시트 인식 완료)`;
-        document.getElementById('sentZone').classList.add('has-file');
-
-        // localStorage에 저장
         try {
-          localStorage.setItem('beaupl_sent', JSON.stringify({
-            names: [...sentNames],
-            fileCount: files.length,
-            savedAt: new Date().toISOString(),
-          }));
-          showStatus('uploadStatus',
-            `발송 이력 ${sentNames.size.toLocaleString()}개 로드 완료 — 브라우저에 저장됐어요 (다음 접속 시 자동 복원)`, 'success');
-        } catch(e) {
-          showStatus('uploadStatus',
-            `발송 이력 ${sentNames.size.toLocaleString()}개 로드 완료 (자동저장 불가 — 저장 공간 부족)`, 'warning');
-        }
-        document.getElementById('cacheInfo').classList.remove('show');
+          localStorage.setItem('bp_sent', JSON.stringify({ n: files.length, names: [...sentNames] }));
+        } catch(e) {}
+        $('sentFN').textContent = `✅ ${files.length}개 파일 (${sentNames.size.toLocaleString()}개 이력)`;
+        $('sentZone').classList.add('ok');
+        showSt(`발송 이력 ${sentNames.size.toLocaleString()}개 로드 완료`, 'ok');
       }
     };
-    reader.readAsBinaryString(file);
+    reader.readAsArrayBuffer(file);
   });
 }
 
-// ── 유틸 ──────────────────────────────────────────────────────────
-function showStatus(id, msg, type) {
-  const el = document.getElementById(id);
-  el.className = `status ${type}`;
-  el.textContent = msg;
-}
+/* ═══════════════════ 캐시 복원 ═══════════════════ */
+window.addEventListener('load', () => {
+  const ym = new Date();
+  $('targetMonth').value = String(ym.getFullYear()) + String(ym.getMonth()+1).padStart(2,'0');
+  const key = localStorage.getItem('bp_apikey');
+  if (key) $('apiKey').value = key;
 
-function log(msg, type='') {
-  const el = document.getElementById('fetchLog');
-  el.classList.add('show');
-  const cls = type === 'ok' ? 'ok' : type === 'warn' ? 'warn' : type === 'err' ? 'err' : '';
-  el.innerHTML += `<div class="${cls}">${msg}</div>`;
-  el.scrollTop = el.scrollHeight;
-}
-
-function setProgress(pct, text) {
-  document.getElementById('progressFill').style.width = pct + '%';
-  document.getElementById('progressText').textContent = text;
-}
-
-function ageLabel(years) {
-  if (years < 1)  return '1년미만';
-  if (years < 2)  return '1~2년';
-  if (years < 3)  return '2~3년';
-  if (years < 5)  return '3~5년';
-  if (years < 7)  return '5~7년';
-  if (years < 10) return '7~10년';
-  if (years < 15) return '10~15년';
-  return '15년+';
-}
-
-function scoreRow(item, refDate) {
-  const addr = item.rdnWhlAddr || item.sitewhlAddr || '';
-
-  // 1. 지역 점수 (최대 10점)
-  const region = Object.keys(REGION_SCORE).find(r => addr.includes(r)) || '';
-  const sRegion = REGION_SCORE[region] || 5;
-
-  // 2. 영업연수 점수: 0~2년=10점, 2년+=5점
-  let sAge = 5;
-  let yearsNum = 99;
-  if (item.apvPermYmd) {
-    const d = item.apvPermYmd.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3');
-    yearsNum = (refDate - new Date(d)) / (1000*60*60*24*365.25);
-    if (!isNaN(yearsNum) && yearsNum >= 0) {
-      sAge = yearsNum < 2 ? 10 : 5;
-    }
-  }
-
-  // 3. 제외 여부 (프랜차이즈 + 업종 제외)
-  const name = item.bplcNm || '';
-  const nameLower = name.toLowerCase();
-  const isExcludeKeyword = EXCLUDE_KEYWORDS.some(kw => nameLower.includes(kw.toLowerCase()));
-  const isFranchise =
-    franchiseNameSet.has(normName(name)) ||   // 동일 상호 5개+
-    /\d+\s*(호점|지점)$/.test(name);          // 번호 지점명
-
-  return {
-    sRegion,
-    sAge,
-    total: sRegion + sAge,        // 최대 20점
-    region,
-    ageLabel: yearsNum < 2 ? '0~2년(신규)' : '2년+',
-    isFranchise,
-    isExcludeKeyword,
-  };
-}
-
-// ── 메인: API 조회 + 선별 ─────────────────────────────────────────
-let resultData = [];
-
-async function runFetch() {
-  const apiKey     = document.getElementById('apiKey').value.trim();
-  const topN       = parseInt(document.getElementById('topN').value);
-  const minScore   = parseInt(document.getElementById('minScore').value);
-  const bizType    = document.getElementById('bizType').value;
-  const groupBy    = document.getElementById('groupBy').value;
-  const fetchOrder = document.getElementById('fetchOrder').value;
-
-  // 인허가 파일 체크
-  if (!salonData.length) {
-    alert('인허가 엑셀 파일을 먼저 업로드해주세요.\n(STEP 2 → 인허가 데이터 업로드)');
-    return;
-  }
-  if (!apiKey) { /* API 키 없어도 파일 모드로 동작 */ }
-
-  if (document.getElementById('saveKey').checked) {
-    localStorage.setItem('beaupl_api_key', apiKey);
-  }
-
-  // UI 초기화
-  document.getElementById('runBtn').disabled = true;
-  document.getElementById('progressWrap').classList.remove('hidden');
-  document.getElementById('fetchLog').innerHTML = '';
-  document.getElementById('card4').classList.add('hidden');
-  setProgress(0, '준비 중...');
-
-  const refDate = new Date('2026-01-01');
-  const PAGE_SIZE = 1000;
-  let allItems = [];
-  let page = 1;
-  let totalCount = 0;
+  const msgs = [];
 
   try {
-    // 1차 호출 — 총 건수 파악
-    log('▶ API 호출 시작...');
-    setProgress(5, '총 건수 확인 중...');
-
-    // ── 인허가 파일 데이터 처리 (API 대체) ────────────────────────
-    log(`✅ 인허가 파일 모드 — ${salonData.length.toLocaleString()}개 로드됨`);
-    setProgress(10, '데이터 필터링 중...');
-
-    // salonData는 handleSalonFile에서 이미 표준 키로 정규화됨
-    allItems = salonData;
-
-    setProgress(20, '업태·영업상태 필터링 중...');
-
-    // 클라이언트 필터: 영업중 + 헤어 업태
-    allItems = allItems.filter(item => {
-      // 영업상태: 영업/정상만 (폐업·휴업 제외)
-      const stateGbn = String(item.trdStateGbn || '');
-      const stateNm  = String(item.trdStateNm  || '');
-      // 영업상태구분코드 1 = 영업/정상
-      if (stateGbn && stateGbn !== '1') return false;
-      if (!stateGbn && stateNm && !stateNm.includes('영업') && !stateNm.includes('정상')) return false;
-      // 업태: 일반미용업 필터
-      if (bizType === '일반미용업') {
-        const uptae = item.uptaeNm || '';
-        if (!uptae.includes('일반미용') && !uptae.includes('미용업')) return false;
-      }
-      return true;
-    });
-    log(`영업중 일반미용업: ${allItems.length.toLocaleString()}개`, 'ok');
-    setProgress(35, '정렬 중...');
-
-    // 정렬: fetchOrder 기준
-    if (fetchOrder === 'latest_first') {
-      // 최신 인허가순 (apvPermYmd 내림차순)
-      allItems.sort((a, b) => (b.apvPermYmd || '').localeCompare(a.apvPermYmd || ''));
-      log('정렬: 최신 인허가순');
-    } else {
-      // 전환율 높은 지역순 정렬
-      const regionOrder = ['대전','광주','울산','경기','대구','인천','서울','부산',
-        '강원','경남','경북','전북','전남','충남','충북','제주','세종'];
-      allItems.sort((a, b) => {
-        const addrA = a.rdnWhlAddr || a.sitewhlAddr || '';
-        const addrB = b.rdnWhlAddr || b.sitewhlAddr || '';
-        const rA = regionOrder.findIndex(r => addrA.includes(r));
-        const rB = regionOrder.findIndex(r => addrB.includes(r));
-        const orderA = rA === -1 ? 99 : rA;
-        const orderB = rB === -1 ? 99 : rB;
-        if (orderA !== orderB) return orderA - orderB;
-        // 동일 지역 내 최신 인허가순
-        return (b.apvPermYmd || '').localeCompare(a.apvPermYmd || '');
-      });
-      log('정렬: 전환율 높은 지역순 → 지역 내 최신 인허가순');
+    const c = JSON.parse(localStorage.getItem('bp_salon') || 'null');
+    if (c && c.d) {
+      salonData = c.d.map(a => ({ name:a[0], addr:a[1], zip:a[2], uptae:a[3], state:a[4], stateNm:a[5], date:a[6], mgt:a[7] }));
+      buildFranchiseSet();
+      $('salonFN').textContent = `✅ ${c.f} (${c.n.toLocaleString()}개) — 저장됨`;
+      $('salonZone').classList.add('ok');
+      msgs.push(`인허가 ${c.n.toLocaleString()}`);
     }
+  } catch(e) { localStorage.removeItem('bp_salon'); }
 
-    totalCount = allItems.length;
-
-    log(`총 ${allItems.length.toLocaleString()}개 수집 완료`, 'ok');
-    setProgress(70, '필터링 및 스코어링 중...');
-
-    // ── 필터링 + 제외 + 스코어링
-    // beauty_salons API 컬럼명 매핑
-    // upsoNm / bplcNm = 사업장명
-    // rdnWhlAddr / sitewhlAddr = 주소
-    // rdnPostNo / zipCode = 우편번호
-    // apvPermYmd = 인허가일자 (YYYYMMDD)
-    // trdStateGbn = 영업상태 (01=영업)
-    // uptaeNm = 업태명
-    let scored = [];
-    for (const item of allItems) {
-      // 업태·영업상태 필터는 수집 단계에서 이미 처리됨
-
-      const name = item.bplcNm || item.upsoNm || item.bizNm || '';
-      const nn   = normName(name);
-      if (!nn) continue;
-      if (enrolledNames.has(nn)) continue;   // 기가입
-      if (sentNames.has(nn)) continue;        // 발송이력
-
-      const sc = scoreRow(item, refDate);
-      if (sc.isExcludeKeyword) continue;      // 업종 제외 (두피/네일/왁싱 등)
-      if (sc.isFranchise) continue;           // 프랜차이즈 제외 (동일 상호 5개+)
-      if (sc.total < minScore) continue;
-
-      // 주소 없으면 제외
-      const addr = item.rdnWhlAddr || item.sitewhlAddr || '';
-      if (!addr.trim()) continue;
-
-      scored.push({
-        name,
-        addr,
-        zipcode: String(item.rdnPostNo || '').replace(/\.0$/,''),
-        ageLabel: sc.ageLabel,
-        score: sc.total,
-        region: sc.region,
-        licenseDate: item.apvPermYmd || '',
-        mgtNo: item.mgtNo || '',
-        nn,
-      });
+  try {
+    const c = JSON.parse(localStorage.getItem('bp_member') || 'null');
+    if (c && c.names) {
+      enrolledNames = new Set(c.names);
+      memberData = c.rows || [];
+      $('memberFN').textContent = `✅ ${c.f} (${c.n.toLocaleString()}명) — 저장됨`;
+      $('memberZone').classList.add('ok');
+      msgs.push(`회원 ${c.n.toLocaleString()}`);
     }
+  } catch(e) { localStorage.removeItem('bp_member'); }
 
-    log(`필터 후 후보: ${scored.length.toLocaleString()}개 (minScore ${minScore}점 이상)`, 'ok');
-    if (scored.length > 0) {
-      const sample = scored.slice(0,3).map(r => `${r.name}(${r.score}점/${r.region})`).join(', ');
-      log(`  상위 샘플: ${sample}`);
-    } else {
-      // 점수 분포 로그
-      const all_scores = allItems.slice(0,1000).map(item => {
-        const sc = scoreRow(item, refDate); return sc.total;
-      });
-      const avg = (all_scores.reduce((a,b)=>a+b,0)/all_scores.length).toFixed(1);
-      const max = Math.max(...all_scores);
-      log(`  ⚠️ 후보 0개 — 샘플 1000개 점수: 평균 ${avg}점, 최고 ${max}점. minScore를 낮춰보세요.`, 'warn');
+  try {
+    const c = JSON.parse(localStorage.getItem('bp_sent') || 'null');
+    if (c && c.names) {
+      sentNames = new Set(c.names);
+      $('sentFN').textContent = `✅ ${c.n}개 파일 (${sentNames.size.toLocaleString()}개) — 저장됨`;
+      $('sentZone').classList.add('ok');
+      msgs.push(`발송이력 ${sentNames.size.toLocaleString()}`);
     }
-    setProgress(80, '그룹 분할 및 상위 선별 중...');
+  } catch(e) { localStorage.removeItem('bp_sent'); }
 
-    // ── 그룹 분할 ──────────────────────────────────────────
-    scored.sort((a,b) => b.score - a.score);
-    allApiItems = allItems; // 전환율 분석용 보관
+  if (msgs.length) {
+    $('cacheTx').textContent = `💾 저장된 데이터 복원 — ${msgs.join(' · ')}`;
+    $('cacheBar').classList.add('show');
+  }
+});
 
-    let grpA = [], grpB = [], grpC = [];
-    const third = Math.floor(topN / 3);
-    const half  = Math.floor(topN / 2);
+function clearCache() {
+  if (!confirm('저장된 모든 데이터를 삭제할까요?')) return;
+  ['bp_salon','bp_member','bp_sent'].forEach(k => localStorage.removeItem(k));
+  salonData = []; memberData = [];
+  enrolledNames = new Set(); sentNames = new Set(); franchiseSet = new Set();
+  ['salonFN','memberFN','sentFN'].forEach(id => $(id).textContent = '');
+  ['salonZone','memberZone','sentZone'].forEach(id => $(id).classList.remove('ok'));
+  $('cacheBar').classList.remove('show');
+  showSt('저장 데이터가 초기화됐어요. 파일을 다시 업로드해주세요.', 'info');
+}
 
-    if (groupBy === 'age3') {
-      // A: 0~2년(신규) / B: 2년+(기존) — 데이터 기반 2분류
-      grpA = scored.filter(r => r.ageLabel === '0~2년(신규)');
-      grpB = scored.filter(r => r.ageLabel === '2년+');
-      grpA = grpA.slice(0, half).map(r => ({...r, group:'A'}));
-      grpB = grpB.slice(0, half).map(r => ({...r, group:'B'}));
-      grpC = [];
-      resultData = [...grpA, ...grpB];
-    } else if (groupBy === 'region') {
-      const metro = ['서울','경기','인천'];
-      grpA = scored.filter(r => !metro.includes(r.region)).slice(0, half).map(r => ({...r, group:'A'}));
-      grpB = scored.filter(r =>  metro.includes(r.region)).slice(0, half).map(r => ({...r, group:'B'}));
-      resultData = [...grpA, ...grpB];
-    } else {
-      grpA = scored.filter((_,i) => i % 2 === 0).slice(0, half).map(r => ({...r, group:'A'}));
-      grpB = scored.filter((_,i) => i % 2 === 1).slice(0, half).map(r => ({...r, group:'B'}));
-      resultData = [...grpA, ...grpB];
-    }
-
-    log(`A:${grpA.length} / B:${grpB.length}${grpC.length ? ' / C:'+grpC.length : ''}개 선별`, 'ok');
-    // 지역별 분포 로그
-    const regionDist = {};
-    resultData.forEach(r => { regionDist[r.region||'기타'] = (regionDist[r.region||'기타']||0)+1; });
-    const distStr = Object.entries(regionDist).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([r,n])=>`${r}:${n}`).join(' ');
-    log(`  지역 분포: ${distStr}`);
-    setProgress(90, '전환율 분석 중...');
-
-    // ── 전환율 분석 패널 ──────────────────────────────────
-    renderConvAnalysis(allItems, scored.length);
-
-    setProgress(97, '결과 렌더링 중...');
-
-    // 지역 필터 옵션
-    const regions = [...new Set(resultData.map(r => r.region).filter(Boolean))].sort();
-    const sel = document.getElementById('filterRegion');
-    sel.innerHTML = '<option value="">전체</option>' +
-      regions.map(r => `<option value="${r}">${r}</option>`).join('');
-
-    // KPI 카드
-    const grpLabels = {
-      age3:   ['0~2년 신규(A)', '2년+ 기존(B)', ''],
-      age:    ['1~2년차', '7~10년차', ''],
-      region: ['지방중소시', '수도권', ''],
-      score:  ['짝수순위', '홀수순위', ''],
-    };
-    const lbl = grpLabels[groupBy] || ['A','B',''];
-    document.getElementById('kpiRow').innerHTML = `
-      <div class="kpi"><div class="kpi-label">총 선별</div><div class="kpi-val">${resultData.length.toLocaleString()}</div><div class="kpi-sub">발송 대상</div></div>
-      <div class="kpi" style="border-top-color:#166534;"><div class="kpi-label">A그룹</div><div class="kpi-val" style="color:#166534;">${grpA.length.toLocaleString()}</div><div class="kpi-sub">${lbl[0]}</div></div>
-      <div class="kpi" style="border-top-color:#1e40af;"><div class="kpi-label">B그룹</div><div class="kpi-val" style="color:#1e40af;">${grpB.length.toLocaleString()}</div><div class="kpi-sub">${lbl[1]}</div></div>
-      ${grpC.length ? `<div class="kpi" style="border-top-color:#854d0e;"><div class="kpi-label">C그룹</div><div class="kpi-val" style="color:#854d0e;">${grpC.length.toLocaleString()}</div><div class="kpi-sub">${lbl[2]}</div></div>` : ''}
-      <div class="kpi" style="border-top-color:#6b7280;"><div class="kpi-label">기가입/발송 제외</div><div class="kpi-val" style="color:#6b7280;">${(allItems.length - scored.length).toLocaleString()}</div><div class="kpi-sub">중복 제거</div></div>
-    `;
-
-    renderTable();
-    document.getElementById('card4a').classList.remove('hidden');
-    document.getElementById('card4').classList.remove('hidden');
-    document.getElementById('card4a').scrollIntoView({behavior:'smooth', block:'start'});
-    setProgress(100, `완료 — ${resultData.length}개 선별`);
-
-    ['s1','s2','s3'].forEach(id => { document.getElementById(id).className = 'step-dot done'; });
-    document.getElementById('s4').className = 'step-dot active';
-
-  } catch(err) {
-    log('오류: ' + err.message, 'err');
-    if (err.message.includes('CORS')) {
-      log('→ 해결법: GitHub Pages로 배포하거나 CORS 프록시 사용 필요', 'warn');
-      log('→ 임시 방법: https://cors-anywhere.herokuapp.com/ 프록시 활용', 'warn');
-    }
-    setProgress(0, '오류 발생');
-  } finally {
-    document.getElementById('runBtn').disabled = false;
+function markStep(n) {
+  for (let i = 1; i <= 4; i++) {
+    const el = $('s'+i);
+    el.className = 'sdot' + (i < n ? ' done' : i === n ? ' on' : '');
   }
 }
 
-// ── 전환율 분석 렌더 ────────────────────────────────────────────────
-function renderConvAnalysis(apiItems, candidateCount) {
-  // 회원 데이터가 없으면 스킵
-  if (!memberData.length) {
-    document.getElementById('card4a').classList.add('hidden');
-    return;
+/* ═══════════════════ 스코어링 ═══════════════════ */
+function scoreItem(item, refDate) {
+  const region = extractRegion(item.addr);
+  const sRegion = REGION_SCORE[region] || 5;
+
+  let sAge = 5, isNew = false;
+  if (item.date && item.date.length === 8) {
+    const d = new Date(item.date.slice(0,4)+'-'+item.date.slice(4,6)+'-'+item.date.slice(6,8));
+    const years = (refDate - d) / 31557600000;
+    if (!isNaN(years) && years >= 0 && years < 2) { sAge = 10; isNew = true; }
   }
 
-  const ref = new Date('2026-01-01');
-  const totalApi  = apiItems.length;
+  return { total: sRegion + sAge, region, isNew };
+}
 
-  // 인증완료 회원 필터 (탈퇴회원 제외)
+function isExcluded(item) {
+  const nl = item.name.toLowerCase();
+  if (EXCLUDE_KW.some(kw => nl.includes(kw))) return '업종키워드';
+  const nn = normName(item.name);
+  if (franchiseSet.has(nn)) return '프랜차이즈';
+  if (/\d+\s*(호점|지점)$/.test(item.name)) return '지점명';
+  return '';
+}
+
+/* ═══════════════════ 메인 실행 ═══════════════════ */
+async function run() {
+  if (!salonData.length) {
+    alert('인허가 파일을 먼저 업로드해주세요.');
+    return;
+  }
+  const key = $('apiKey').value.trim();
+  if (key) localStorage.setItem('bp_apikey', key);
+
+  const bizType  = segVal('segBiz');
+  const groupBy  = segVal('segGroup');
+  const sortMode = segVal('segSort');
+  const topN     = parseInt(segVal('segTopN'));
+  const minScore = parseInt(segVal('segScore'));
+  const refDate  = new Date('2026-01-01');
+
+  $('runBtn').disabled = true;
+  $('logBox').innerHTML = '';
+  $('convCard').classList.add('hidden');
+  $('resultCard').classList.add('hidden');
+  markStep(3);
+
+  try {
+    log(`▶ 선별 시작 — 인허가 ${salonData.length.toLocaleString()}개`);
+    setProg(10, '영업상태·업태 필터링...');
+    await tick();
+
+    // 1. 영업중 + 업태 필터
+    let items = salonData.filter(s => {
+      if (s.state && s.state !== '1' && !s.state.includes('영업')) {
+        if (!s.stateNm.includes('영업') && !s.stateNm.includes('정상')) return false;
+      }
+      if (!s.state && s.stateNm && !s.stateNm.includes('영업') && !s.stateNm.includes('정상')) return false;
+      if (bizType === '일반미용업' && s.uptae && !s.uptae.includes('일반미용') && !s.uptae.includes('미용업')) return false;
+      return true;
+    });
+    log(`영업중 ${bizType}: ${items.length.toLocaleString()}개`, 'ok');
+    setProg(30, '제외 대상 필터링...');
+    await tick();
+
+    // 2. 기가입 / 발송이력 / 업종 / 프랜차이즈 / 주소없음 제외
+    const stats = { enrolled:0, sent:0, kw:0, fr:0, noAddr:0, low:0 };
+    let candidates = [];
+    for (const item of items) {
+      if (!item.addr) { stats.noAddr++; continue; }
+      const nn = normName(item.name);
+      if (!nn) continue;
+      if (enrolledNames.has(nn)) { stats.enrolled++; continue; }
+      if (sentNames.has(nn)) { stats.sent++; continue; }
+      const exc = isExcluded(item);
+      if (exc === '업종키워드') { stats.kw++; continue; }
+      if (exc) { stats.fr++; continue; }
+      const sc = scoreItem(item, refDate);
+      if (sc.total < minScore) { stats.low++; continue; }
+      candidates.push({ ...item, score: sc.total, region: sc.region, isNew: sc.isNew });
+    }
+    log(`제외 — 기가입:${stats.enrolled.toLocaleString()} 발송이력:${stats.sent.toLocaleString()} 업종:${stats.kw.toLocaleString()} 프랜차이즈:${stats.fr.toLocaleString()} 주소없음:${stats.noAddr.toLocaleString()} 점수미달:${stats.low.toLocaleString()}`);
+    log(`후보: ${candidates.length.toLocaleString()}개`, 'ok');
+
+    if (!candidates.length) {
+      log('⚠️ 후보가 없습니다. 최소 점수를 낮추거나 데이터를 확인해주세요.', 'wr');
+      setProg(100, '후보 없음');
+      $('runBtn').disabled = false;
+      return;
+    }
+
+    setProg(55, '정렬 및 그룹 분할...');
+    await tick();
+
+    // 3. 정렬
+    if (sortMode === 'region') {
+      candidates.sort((a, b) => {
+        const ra = REGION_ORDER.indexOf(a.region), rb = REGION_ORDER.indexOf(b.region);
+        const oa = ra < 0 ? 99 : ra, ob = rb < 0 ? 99 : rb;
+        if (oa !== ob) return oa - ob;
+        return (b.date || '').localeCompare(a.date || '');
+      });
+    } else {
+      candidates.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    }
+
+    // 우편번호 없는 것 후순위
+    const withZip = candidates.filter(c => c.zip && c.zip.length >= 5);
+    const noZip   = candidates.filter(c => !c.zip || c.zip.length < 5);
+    candidates = [...withZip, ...noZip];
+
+    // 4. 그룹 분할
+    const half = Math.floor(topN / 2);
+    let grpA = [], grpB = [];
+    if (groupBy === 'age') {
+      grpA = candidates.filter(c => c.isNew).slice(0, half);
+      grpB = candidates.filter(c => !c.isNew).slice(0, half);
+    } else if (groupBy === 'region') {
+      grpA = candidates.filter(c => !METRO.includes(c.region)).slice(0, half);
+      grpB = candidates.filter(c =>  METRO.includes(c.region)).slice(0, half);
+    } else {
+      const top = candidates.slice(0, topN);
+      grpA = top.filter((_, i) => i % 2 === 0);
+      grpB = top.filter((_, i) => i % 2 === 1);
+    }
+    grpA = grpA.map(c => ({...c, group:'A'}));
+    grpB = grpB.map(c => ({...c, group:'B'}));
+    resultData = [...grpA, ...grpB];
+
+    const grpLbl = {
+      age:    ['신규 0~2년', '기존 2년+'],
+      region: ['지방중소시', '수도권'],
+      score:  ['점수 짝수', '점수 홀수'],
+    }[groupBy];
+
+    log(`선별 — A(${grpLbl[0]}):${grpA.length.toLocaleString()} / B(${grpLbl[1]}):${grpB.length.toLocaleString()}`, 'ok');
+
+    // 지역 분포 로그
+    const dist = {};
+    resultData.forEach(r => { dist[r.region||'기타'] = (dist[r.region||'기타']||0)+1; });
+    log('지역: ' + Object.entries(dist).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k,v])=>`${k} ${v}`).join(' · '));
+
+    setProg(75, '전환율 분석...');
+    await tick();
+
+    // 5. 전환율 분석
+    renderConv(items, refDate);
+
+    setProg(90, '결과 렌더링...');
+    await tick();
+
+    // 6. 결과 렌더
+    renderResult(grpA, grpB, grpLbl, stats);
+    renderTable();
+
+    setProg(100, `완료 — ${resultData.length.toLocaleString()}개 선별`);
+    markStep(4);
+    $('convCard').classList.remove('hidden');
+    $('resultCard').classList.remove('hidden');
+    $('convCard').scrollIntoView({behavior:'smooth', block:'start'});
+
+  } catch(err) {
+    console.error(err);
+    log('오류: ' + err.message, 'er');
+    setProg(0, '오류 발생');
+  } finally {
+    $('runBtn').disabled = false;
+  }
+}
+
+function tick() { return new Promise(r => setTimeout(r, 20)); }
+
+/* ═══════════════════ 전환율 분석 ═══════════════════ */
+function renderConv(activeItems, refDate) {
+  if (!memberData.length) { $('convCard').classList.add('hidden'); return; }
+
+  const totalActive = activeItems.length;
   const authMembers = memberData.filter(r => {
     const s = r['살롱회원'] || '';
-    const t = r['탈퇴여부'] || r['탈퇴'] || '';
+    const t = String(r['탈퇴여부'] || '');
     return s === '인증완료' && !t.includes('탈퇴');
   });
   const totalAuth = authMembers.length;
-
-  // 구매전환
-  const buyers = authMembers.filter(r =>
-    parseInt(r['총주문건수'] || r['총 주문건수'] || 0) > 0
+  const buyers = authMembers.filter(r => parseInt(r['총주문건수'] || 0) > 0).length;
+  const postal = memberData.filter(r =>
+    String(r['회원태그']||'').includes('우편') || String(r['가입경로']||'').includes('우편')
   ).length;
 
-  // 우편 경로 가입자 (회원태그 or 가입경로)
-  const postalMembers = memberData.filter(r =>
-    (r['회원태그'] || '').includes('우편') ||
-    (r['가입경로'] || '').includes('우편')
-  ).length;
+  const activeNameSet = new Set(activeItems.map(i => normName(i.name)));
+  const matched = authMembers.filter(r => activeNameSet.has(normName(r['상호']))).length;
+  const closedEst = totalAuth - matched;
 
-  // 폐업 추정: 회원 중 API 영업중 목록에 없는 매장
-  const apiNameSet = new Set(apiItems.map(i => normName(i.bplcNm || i.upsoNm || '')));
-  const closedEst = authMembers.filter(r => {
-    const n = normName(r['상호'] || r['상세주소'] || '');
-    return n && !apiNameSet.has(n);
-  }).length;
+  const pct = (a, b) => b > 0 ? (a/b*100).toFixed(1)+'%' : '-';
 
-  // KPI 카드
-  document.getElementById('convKpiRow').innerHTML = `
-    <div class="kpi" style="border-top-color:#1e40af;">
-      <div class="kpi-label">전체 영업중 (API)</div>
-      <div class="kpi-val" style="color:#1e40af;">${totalApi.toLocaleString()}</div>
-      <div class="kpi-sub">수집 기준</div>
-    </div>
-    <div class="kpi" style="border-top-color:#166534;">
-      <div class="kpi-label">인증완료 회원</div>
-      <div class="kpi-val" style="color:#166534;">${totalAuth.toLocaleString()}</div>
-      <div class="kpi-sub">전체 대비 ${totalApi>0?(totalAuth/totalApi*100).toFixed(2)+'%':'-'}</div>
-    </div>
-    <div class="kpi" style="border-top-color:#c2410c;">
-      <div class="kpi-label">구매 전환</div>
-      <div class="kpi-val" style="color:#c2410c;">${buyers.toLocaleString()}</div>
-      <div class="kpi-sub">인증완료 대비 ${totalAuth>0?(buyers/totalAuth*100).toFixed(1)+'%':'-'}</div>
-    </div>
-    <div class="kpi" style="border-top-color:#7c3aed;">
-      <div class="kpi-label">우편 경로 가입</div>
-      <div class="kpi-val" style="color:#7c3aed;">${postalMembers.toLocaleString()}</div>
-      <div class="kpi-sub">발송 대비 전환율 추적</div>
-    </div>
-    <div class="kpi" style="border-top-color:#dc2626;">
-      <div class="kpi-label">폐업 추정</div>
-      <div class="kpi-val" style="color:#dc2626;">${closedEst.toLocaleString()}</div>
-      <div class="kpi-sub">인증완료 대비 ${totalAuth>0?(closedEst/totalAuth*100).toFixed(1)+'%':'-'}</div>
-    </div>
+  $('convKpis').innerHTML = `
+    <div class="kpi a1"><div class="l">전체 영업중</div><div class="v">${totalActive.toLocaleString()}</div><div class="s">필터 기준</div></div>
+    <div class="kpi a2"><div class="l">인증완료 회원</div><div class="v" style="color:var(--green)">${totalAuth.toLocaleString()}</div><div class="s">영업중 대비 ${pct(totalAuth, totalActive)}</div></div>
+    <div class="kpi a3"><div class="l">구매 전환</div><div class="v" style="color:var(--accent)">${buyers.toLocaleString()}</div><div class="s">인증 대비 ${pct(buyers, totalAuth)}</div></div>
+    <div class="kpi a4"><div class="l">우편 경로 가입</div><div class="v">${postal.toLocaleString()}</div><div class="s">태그·경로 기준</div></div>
+    <div class="kpi a5"><div class="l">폐업 추정</div><div class="v" style="color:var(--red)">${closedEst.toLocaleString()}</div><div class="s">인증 대비 ${pct(closedEst, totalAuth)}</div></div>
   `;
 
-  // 영업연수 2분류 (신규 0~2년 / 기존 2년+)
-  const ageGroups = [['0~2년 (신규)', 0, 2], ['2년+ (기존)', 2, 999]];
-  const safe = (n, d) => isNaN(n) || !isFinite(n) ? d : n;
-
-  const convRows = ageGroups.map(([label, lo, hi]) => {
-    const apiCount = apiItems.filter(item => {
-      if (!item.apvPermYmd) return false;
-      const d = item.apvPermYmd.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3');
-      const yr = (ref - new Date(d)) / (1000*60*60*24*365.25);
-      return yr >= lo && yr < hi;
+  // 신규/기존 2분류 테이블
+  const rows = [['0~2년 (신규)', true], ['2년+ (기존)', false]].map(([label, wantNew]) => {
+    const cnt = activeItems.filter(i => {
+      if (!i.date || i.date.length !== 8) return !wantNew;
+      const d = new Date(i.date.slice(0,4)+'-'+i.date.slice(4,6)+'-'+i.date.slice(6,8));
+      const yr = (refDate - d) / 31557600000;
+      return wantNew ? (yr >= 0 && yr < 2) : !(yr >= 0 && yr < 2);
     }).length;
-    const ratio    = totalApi > 0 ? apiCount / totalApi : 0;
-    const estAuth  = Math.round(totalAuth * ratio);
-    const estBuyer = Math.round(buyers * ratio);
-    const estClosed= Math.round(closedEst * ratio);
+    const ratio = totalActive > 0 ? cnt / totalActive : 0;
+    const eAuth = Math.round(totalAuth * ratio);
+    const eClosed = Math.round(closedEst * ratio);
     return `<tr>
-      <td style="padding:7px 12px; border-bottom:1px solid #f0f2f5; font-weight:600;">${label}</td>
-      <td style="padding:7px 12px; border-bottom:1px solid #f0f2f5; text-align:right;">${apiCount.toLocaleString()}</td>
-      <td style="padding:7px 12px; border-bottom:1px solid #f0f2f5; text-align:right;">${estAuth.toLocaleString()}</td>
-      <td style="padding:7px 12px; border-bottom:1px solid #f0f2f5; text-align:right; color:#166534; font-weight:700;">
-        ${apiCount > 0 ? safe(estAuth/apiCount*100,0).toFixed(2)+'%' : '-'}
-      </td>
-      <td style="padding:7px 12px; border-bottom:1px solid #f0f2f5; text-align:right; color:#c2410c; font-weight:700;">
-        ${apiCount > 0 ? safe(estBuyer/apiCount*100,0).toFixed(2)+'%' : '-'}
-      </td>
-      <td style="padding:7px 12px; border-bottom:1px solid #f0f2f5; text-align:right; color:#dc2626;">${estClosed.toLocaleString()}</td>
-      <td style="padding:7px 12px; border-bottom:1px solid #f0f2f5; text-align:right; color:#dc2626;">
-        ${totalAuth > 0 ? safe(estClosed/totalAuth*100,0).toFixed(1)+'%' : '-'}
-      </td>
+      <td style="font-weight:700;">${label}</td>
+      <td style="text-align:right;">${cnt.toLocaleString()}</td>
+      <td style="text-align:right;">${eAuth.toLocaleString()}</td>
+      <td style="text-align:right; color:var(--green); font-weight:700;">${cnt>0?pct(eAuth,cnt):'-'}</td>
+      <td style="text-align:right; color:var(--red);">${eClosed.toLocaleString()}</td>
+      <td style="text-align:right; color:var(--red);">${pct(eClosed, totalAuth)}</td>
     </tr>`;
   });
-
-  convRows.push(`<tr style="background:#f0f2f5; font-weight:800;">
-    <td style="padding:8px 12px;">합계</td>
-    <td style="padding:8px 12px; text-align:right;">${totalApi.toLocaleString()}</td>
-    <td style="padding:8px 12px; text-align:right;">${totalAuth.toLocaleString()}</td>
-    <td style="padding:8px 12px; text-align:right; color:#166534;">${totalApi>0?safe(totalAuth/totalApi*100,0).toFixed(2)+'%':'-'}</td>
-    <td style="padding:8px 12px; text-align:right; color:#c2410c;">${totalApi>0?safe(buyers/totalApi*100,0).toFixed(2)+'%':'-'}</td>
-    <td style="padding:8px 12px; text-align:right; color:#dc2626;">${closedEst.toLocaleString()}</td>
-    <td style="padding:8px 12px; text-align:right; color:#dc2626;">${totalAuth>0?safe(closedEst/totalAuth*100,0).toFixed(1)+'%':'-'}</td>
+  rows.push(`<tr style="background:var(--gray-100); font-weight:800;">
+    <td>합계</td>
+    <td style="text-align:right;">${totalActive.toLocaleString()}</td>
+    <td style="text-align:right;">${totalAuth.toLocaleString()}</td>
+    <td style="text-align:right; color:var(--green);">${pct(totalAuth, totalActive)}</td>
+    <td style="text-align:right; color:var(--red);">${closedEst.toLocaleString()}</td>
+    <td style="text-align:right; color:var(--red);">${pct(closedEst, totalAuth)}</td>
   </tr>`);
-
-  document.getElementById('convBody').innerHTML = convRows.join('');
+  $('convBody').innerHTML = rows.join('');
 }
 
-// 주소에서 시/도 + 시군구 추출 (2단계)
-function addrShort(addr) {
-  if (!addr) return '';
-  // 도로명 or 지번 주소에서 시도+시군구만 추출
-  const m = addr.match(/^(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주)[^\s]*\s+([^\s]+[시군구])/);
-  if (m) return m[1] + ' ' + m[2];
-  return addr.slice(0, 12);
+/* ═══════════════════ 결과 렌더 ═══════════════════ */
+function renderResult(grpA, grpB, grpLbl, stats) {
+  $('resultKpis').innerHTML = `
+    <div class="kpi a3"><div class="l">총 선별</div><div class="v" style="color:var(--accent)">${resultData.length.toLocaleString()}</div><div class="s">발송 대상</div></div>
+    <div class="kpi a2"><div class="l">A그룹</div><div class="v" style="color:var(--green)">${grpA.length.toLocaleString()}</div><div class="s">${grpLbl[0]}</div></div>
+    <div class="kpi a1"><div class="l">B그룹</div><div class="v">${grpB.length.toLocaleString()}</div><div class="s">${grpLbl[1]}</div></div>
+    <div class="kpi a4"><div class="l">제외 합계</div><div class="v" style="color:var(--gray-500)">${(stats.enrolled+stats.sent+stats.kw+stats.fr).toLocaleString()}</div><div class="s">기가입·발송·업종·프랜차이즈</div></div>
+  `;
+  const regions = [...new Set(resultData.map(r => r.region).filter(Boolean))].sort();
+  $('fRegion').innerHTML = '<option value="">전체</option>' + regions.map(r => `<option value="${r}">${r}</option>`).join('');
 }
 
-// ── 테이블 렌더 ─────────────────────────────────────────────────────
 function renderTable() {
-  const filterGroup  = document.getElementById('filterGroup').value;
-  const filterRegion = document.getElementById('filterRegion').value;
-  const sortBy       = document.getElementById('sortBy').value;
-
-  let rows = [...resultData];
-
-  // 주소 없는 것 제외
-  rows = rows.filter(r => r.addr && r.addr.trim().length > 0);
-
-  if (filterGroup)  rows = rows.filter(r => r.group === filterGroup);
-  if (filterRegion) rows = rows.filter(r => r.region === filterRegion);
-
-  // 정렬: 우편번호 없으면 후순위
-  const hasZip   = rows.filter(r => r.zipcode && String(r.zipcode).length >= 5);
-  const noZip    = rows.filter(r => !r.zipcode || String(r.zipcode).length < 5);
+  const fg = $('fGroup').value, fr = $('fRegion').value, fs = $('fSort').value;
+  let rows = resultData.filter(r => r.addr);
+  if (fg) rows = rows.filter(r => r.group === fg);
+  if (fr) rows = rows.filter(r => r.region === fr);
 
   let sortFn;
-  if (sortBy === 'score')   sortFn = (a,b) => b.score - a.score;
-  else if (sortBy === 'age_new') sortFn = (a,b) => (a.licenseDate||'').localeCompare(b.licenseDate||'');
-  else if (sortBy === 'age_old') sortFn = (a,b) => (b.licenseDate||'').localeCompare(a.licenseDate||'');
+  if (fs === 'new') sortFn = (a,b) => (b.date||'').localeCompare(a.date||'');
+  else if (fs === 'old') sortFn = (a,b) => (a.date||'').localeCompare(b.date||'');
   else sortFn = (a,b) => b.score - a.score;
 
-  hasZip.sort(sortFn);
-  noZip.sort(sortFn);
-  rows = [...hasZip, ...noZip];
+  const withZip = rows.filter(r => r.zip && r.zip.length >= 5).sort(sortFn);
+  const noZip   = rows.filter(r => !r.zip || r.zip.length < 5).sort(sortFn);
+  rows = [...withZip, ...noZip];
 
-  const MAX_SCORE = 20;
-  const tbody = document.getElementById('resultBody');
-  tbody.innerHTML = rows.slice(0, 200).map((r, i) => {
-    const shortAddr = addrShort(r.addr);
-    const licenseFormatted = r.licenseDate
-      ? r.licenseDate.replace(/(\d{4})(\d{2})(\d{2})/, '$1.$2.$3')
-      : '-';
-    return `
+  $('resultBody').innerHTML = rows.slice(0, 200).map((r, i) => `
     <tr>
       <td>${i+1}</td>
-      <td><span class="badge ${r.group==='A'?'badge-a':'badge-b'}">${r.group}</span></td>
+      <td><span class="bdg ${r.group==='A'?'bdg-a':'bdg-b'}">${r.group}</span></td>
       <td><strong>${r.name}</strong></td>
-      <td title="${r.addr}">${shortAddr}</td>
-      <td>${r.zipcode || '<span style="color:#a0aec0">-</span>'}</td>
-      <td><span style='font-size:10px; padding:2px 6px; border-radius:10px; background:${r.ageLabel==='0~2년(신규)'?'#dcfce7':'#f1f5f9'}; color:${r.ageLabel==='0~2년(신규)'?'#166534':'#475569'};'>${r.ageLabel}</span></td>
-      <td style="font-size:11px; color:#718096;">${licenseFormatted}</td>
-      <td>
-        <div class="score-bar">
-          <div class="score-fill" style="width:${Math.round(r.score/MAX_SCORE*60)}px"></div>
-          <span class="score-num">${r.score}</span>
-        </div>
-      </td>
-    </tr>`;
-  }).join('');
+      <td title="${r.addr}">${addrShort(r.addr)}</td>
+      <td>${r.zip || '<span style="color:var(--gray-300)">-</span>'}</td>
+      <td><span class="${r.isNew?'bdg-new':'bdg-old'}">${r.isNew?'신규':'기존'}</span></td>
+      <td style="font-size:11px; color:var(--gray-500);">${fmtDate(r.date)}</td>
+      <td><div class="sbar"><div class="sfill" style="width:${Math.round(r.score/20*50)}px"></div><span class="snum">${r.score}</span></div></td>
+    </tr>
+  `).join('');
 
-  document.getElementById('tableCount').textContent =
-    `${rows.length.toLocaleString()}개 표시 중 (최대 200행 미리보기 / 전체 다운로드는 엑셀 버튼)`;
+  $('tCount').textContent = `${rows.length.toLocaleString()}개 표시 (미리보기 200행 · 전체는 엑셀 다운로드)`;
 }
 
-// 우편발송 고객 ↔ 뷰플샵 회원 매칭 (상호명+주소 기반)
-function buildMatchData() {
+/* ═══════════════════ 엑셀 / CSV ═══════════════════ */
+function buildMatchSheet() {
   if (!sentNames.size || !memberData.length) return [];
-
-  // 회원 데이터 맵 (상호_norm → 회원정보)
-  const memberMap = {};
+  const mMap = {};
   memberData.forEach(r => {
-    const n = normName(r['상호'] || '');
-    if (n) memberMap[n] = r;
+    const n = normName(r['상호']);
+    if (n) mMap[n] = r;
   });
-
-  // 발송 이력 × 회원 매칭
-  // salonData에서 실제 발송된 매장 찾기 (sentNames에 있는 것)
-  const matched = [];
-  salonData.forEach(item => {
-    const n = normName(item.bplcNm || '');
-    if (!sentNames.has(n)) return;  // 발송 이력 없음
-
-    const member = memberMap[n];
-    const addrMatch = member && (
-      (item.rdnWhlAddr || '').slice(0,15) === (member['주소'] || '').slice(0,15)
-    );
-    const nameMatch = !!member;
-
+  const out = [];
+  for (const s of salonData) {
+    const nn = normName(s.name);
+    if (!sentNames.has(nn)) continue;
+    const m = mMap[nn];
     let confirm = '미매칭';
-    if (member) {
-      confirm = (nameMatch && addrMatch) ? '확인완료' : '확인필요';
+    if (m) {
+      const addrMatch = (s.addr||'').slice(0,15) === String(m['주소']||'').slice(0,15);
+      confirm = addrMatch ? '확인완료' : '확인필요';
     }
-
-    matched.push({
-      관리번호:       item.mgtNo || '',
-      사업장명:       item.bplcNm || '',
-      도로명전체주소: item.rdnWhlAddr || '',
-      도로명우편번호: item.rdnPostNo || '',
-      가입경로:       member?.['가입경로'] || '',
-      고객태그:       member?.['회원태그'] || '',
-      아이디:         member?.['아이디'] || '',
-      회원구분:       member?.['살롱회원'] || '',
-      상호명:         member?.['상호'] || '',
-      사업자등록번호: member?.['사업자번호'] || '',
-      확인여부:       confirm,
+    out.push({
+      관리번호: s.mgt, 사업장명: s.name, 도로명전체주소: s.addr,
+      도로명우편번호: s.zip,
+      가입경로: m?.['가입경로']||'', 고객태그: m?.['회원태그']||'',
+      아이디: m?.['아이디']||'', 회원구분: m?.['살롱회원']||'',
+      상호명: m?.['상호']||'', 사업자등록번호: m?.['사업자번호']||'',
+      확인여부: confirm,
     });
-  });
-  return matched;
+  }
+  return out;
 }
 
-// ── 엑셀 다운로드 ────────────────────────────────────────────────────
 function downloadExcel() {
   if (!resultData.length) return;
-
-  // 발송 대상 시트
-  const rows = resultData
-    .filter(r => r.addr && r.addr.trim().length > 0)
-    .map((r, i) => ({
-      순위: i+1,
-      그룹: r.group,
-      사업장명: r.name,
-      주소: addrShort(r.addr),
-      주소전체: r.addr,
-      도로명우편번호: r.zipcode || '',
-      영업연수: r.ageLabel,
-      인허가일자: r.licenseDate ? r.licenseDate.replace(/(\d{4})(\d{2})(\d{2})/, '$1.$2.$3') : '',
-      우선순위점수: r.score,
-      시도: r.region,
-    }));
-
+  const rows = resultData.filter(r => r.addr).map((r, i) => ({
+    순위: i+1, 그룹: r.group, 사업장명: r.name,
+    '주소(시군구)': addrShort(r.addr), 주소전체: r.addr,
+    도로명우편번호: r.zip || '', 구분: r.isNew ? '신규(0~2년)' : '기존(2년+)',
+    인허가일자: fmtDate(r.date), 점수: r.score, 시도: r.region, 관리번호: r.mgt,
+  }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), '발송대상전체');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.filter(r=>r['그룹']==='A')), 'A그룹_신규');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.filter(r=>r['그룹']==='B')), 'B그룹_기존');
-
-  // 발송고객 ↔ 가입 회원 매칭 시트
-  const matchData = buildMatchData();
-  if (matchData.length) {
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(matchData), '발송-가입 매칭');
-  }
-
-  const date = new Date().toISOString().slice(0,10).replace(/-/g,'');
-  XLSX.writeFile(wb, `뷰플샵_발송대상_${date}.xlsx`);
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.filter(r=>r['그룹']==='A')), 'A그룹');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.filter(r=>r['그룹']==='B')), 'B그룹');
+  const match = buildMatchSheet();
+  if (match.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(match), '발송-가입 매칭');
+  const d = new Date().toISOString().slice(0,10).replace(/-/g,'');
+  XLSX.writeFile(wb, `뷰플샵_발송대상_${d}.xlsx`);
 }
 
 function copyCSV() {
   if (!resultData.length) return;
-  const header = '순위,그룹,사업장명,주소,우편번호,연수구간,점수';
-  const rows = resultData.map((r,i) =>
-    `${i+1},${r.group},"${r.name}","${r.addr}",${r.zipcode},${r.ageLabel},${r.score}`
+  const header = '순위,그룹,사업장명,주소,우편번호,구분,인허가일자,점수';
+  const lines = resultData.filter(r=>r.addr).map((r,i) =>
+    `${i+1},${r.group},"${r.name}","${addrShort(r.addr)}",${r.zip||''},${r.isNew?'신규':'기존'},${fmtDate(r.date)},${r.score}`
   );
-  navigator.clipboard.writeText([header,...rows].join('\n'));
+  navigator.clipboard.writeText([header,...lines].join('\n'));
   alert('CSV가 클립보드에 복사됐어요.');
 }
 </script>
